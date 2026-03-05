@@ -229,6 +229,17 @@ func (a *App) createControls() *fyne.Container {
 	})
 	relativityCheck.Checked = true
 
+	integratorSelect := widget.NewSelect([]string{"Verlet (symplectic)", "RK4 (classic)"}, func(selected string) {
+		a.simulator.Lock()
+		if selected == "RK4 (classic)" {
+			a.simulator.Integrator = physics.IntegratorRK4
+		} else {
+			a.simulator.Integrator = physics.IntegratorVerlet
+		}
+		a.simulator.Unlock()
+	})
+	integratorSelect.Selected = "Verlet (symplectic)"
+
 	sunMassLabel := widget.NewLabel("Sun Mass: 1.00x")
 	sunMassSlider := widget.NewSlider(0.1, 5.0)
 	sunMassSlider.Value = 1.0
@@ -395,6 +406,8 @@ func (a *App) createControls() *fyne.Container {
 		widget.NewLabel("Physics Options:"),
 		planetGravityCheck,
 		relativityCheck,
+		widget.NewLabel("Integrator:"),
+		integratorSelect,
 		widget.NewSeparator(),
 		widget.NewLabel("Sun Properties:"),
 		sunMassLabel,

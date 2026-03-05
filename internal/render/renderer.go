@@ -79,22 +79,45 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 				}
 
 				for j := 0; j < len(planet.Trail)-step; j += step {
-					x1, y1 := r.Viewport.WorldToScreen(planet.Trail[j])
-					x2, y2 := r.Viewport.WorldToScreen(planet.Trail[j+step])
+					// Gather 4 control points for Catmull-Rom (clamped at edges)
+					i0 := j - step
+					if i0 < 0 {
+						i0 = 0
+					}
+					i1 := j
+					i2 := j + step
+					i3 := j + 2*step
+					if i3 >= len(planet.Trail) {
+						i3 = len(planet.Trail) - 1
+					}
+					p0 := planet.Trail[i0]
+					p1 := planet.Trail[i1]
+					p2 := planet.Trail[i2]
+					p3 := planet.Trail[i3]
 
-					if r.isOnScreen(x1, y1, canvasWidth, canvasHeight) ||
-						r.isOnScreen(x2, y2, canvasWidth, canvasHeight) {
-						alpha := uint8(float64(j) / float64(len(planet.Trail)) * 255)
-						lineColor := planet.Color
-						if c, ok := planet.Color.(color.RGBA); ok {
-							lineColor = color.RGBA{c.R, c.G, c.B, alpha}
+					alpha := uint8(float64(j) / float64(len(planet.Trail)) * 255)
+					lineColor := planet.Color
+					if c, ok := planet.Color.(color.RGBA); ok {
+						lineColor = color.RGBA{c.R, c.G, c.B, alpha}
+					}
+
+					// Subdivide segment into 4 interpolated sub-segments
+					const nSub = 4
+					prevX, prevY := r.Viewport.WorldToScreen(p1)
+					for k := 1; k <= nSub; k++ {
+						t := float64(k) / float64(nSub)
+						pt := math3d.CatmullRom(p0, p1, p2, p3, t)
+						curX, curY := r.Viewport.WorldToScreen(pt)
+
+						if r.isOnScreen(prevX, prevY, canvasWidth, canvasHeight) ||
+							r.isOnScreen(curX, curY, canvasWidth, canvasHeight) {
+							line := r.Cache.GetLine(lineColor)
+							line.Position1 = fyne.NewPos(prevX, prevY)
+							line.Position2 = fyne.NewPos(curX, curY)
+							line.StrokeWidth = 1
+							objects = append(objects, line)
 						}
-
-						line := r.Cache.GetLine(lineColor)
-						line.Position1 = fyne.NewPos(x1, y1)
-						line.Position2 = fyne.NewPos(x2, y2)
-						line.StrokeWidth = 1
-						objects = append(objects, line)
+						prevX, prevY = curX, curY
 					}
 				}
 			}

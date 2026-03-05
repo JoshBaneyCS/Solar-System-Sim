@@ -39,6 +39,7 @@ var golden1000 = []goldenBody{
 func testGoldenBaseline(t *testing.T, steps int, expected []goldenBody) {
 	t.Helper()
 	sim := NewSimulator()
+	sim.Integrator = IntegratorRK4 // golden values computed with RK4
 	sim.PlanetGravityEnabled = true
 	sim.RelativisticEffects = true
 	sim.ShowTrails = false
@@ -73,6 +74,7 @@ func TestGoldenBaseline1000(t *testing.T) {
 
 func TestGenerateGoldenBaseline(t *testing.T) {
 	sim := NewSimulator()
+	sim.Integrator = IntegratorRK4 // golden values computed with RK4
 	sim.PlanetGravityEnabled = true
 	sim.RelativisticEffects = true
 	sim.ShowTrails = false

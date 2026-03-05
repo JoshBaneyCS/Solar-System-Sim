@@ -10,6 +10,10 @@ import (
 	"solar-system-sim/pkg/constants"
 )
 
+// MaxSafeDt is the maximum integration timestep (seconds) before substep subdivision.
+// At 8 hours, Mercury gets ~264 steps/orbit even at max TimeSpeed.
+const MaxSafeDt = 28800.0
+
 // Simulator holds the simulation state
 type Simulator struct {
 	Sun                  Body
@@ -62,6 +66,7 @@ func NewSimulator() *Simulator {
 		maxTrailLen:          500,
 		PlanetGravityEnabled: true,
 		RelativisticEffects:  true,
+		Integrator:           IntegratorVerlet,
 	}
 
 	for _, pData := range PlanetData {
@@ -294,7 +299,17 @@ func (s *Simulator) Update(dt float64) {
 	defer s.mu.Unlock()
 
 	if s.IsPlaying {
-		s.Step(dt * s.TimeSpeed)
+		effectiveDt := dt * s.TimeSpeed
+		absDt := math.Abs(effectiveDt)
+		if absDt <= MaxSafeDt {
+			s.Step(effectiveDt)
+		} else {
+			nSub := int(math.Ceil(absDt / MaxSafeDt))
+			subDt := effectiveDt / float64(nSub)
+			for i := 0; i < nSub; i++ {
+				s.Step(subDt)
+			}
+		}
 	}
 }
 
