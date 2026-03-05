@@ -52,7 +52,9 @@ EOF
 
 # Create zip using PowerShell (available on Windows runners)
 if command -v powershell.exe &>/dev/null; then
-    powershell.exe -Command "Compress-Archive -Path '$STAGING/$ARCHIVE_NAME/*' -DestinationPath '${ARCHIVE_NAME}.zip' -Force"
+    WIN_SRC=$(cygpath -w "$STAGING/$ARCHIVE_NAME")
+    WIN_DST=$(cygpath -w "$(pwd)/${ARCHIVE_NAME}.zip")
+    powershell.exe -Command "Compress-Archive -Path '${WIN_SRC}\*' -DestinationPath '${WIN_DST}' -Force"
 elif command -v zip &>/dev/null; then
     cd "$STAGING"
     zip -r "$PROJECT_DIR/${ARCHIVE_NAME}.zip" "$ARCHIVE_NAME"

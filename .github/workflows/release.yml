@@ -10,13 +10,14 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
             goarch: arm64
             platform: macos
             artifact: solar-sim-darwin-arm64.dmg
-          - os: macos-13
+          - os: macos-latest
             goarch: amd64
             platform: macos
             artifact: solar-sim-darwin-amd64.dmg
@@ -65,7 +66,12 @@ jobs:
           EXT=""
           if [ "${{ runner.os }}" = "Windows" ]; then
             EXT=".exe"
-            export CC=x86_64-w64-mingw32-gcc
+            export CC=gcc
+          fi
+          # Cross-compile amd64 on Apple Silicon macOS
+          if [ "$GOARCH" = "amd64" ] && [ "$(uname -m)" = "arm64" ] && [ "${{ runner.os }}" = "macOS" ]; then
+            export CGO_CFLAGS="-arch x86_64"
+            export CGO_LDFLAGS="-arch x86_64"
           fi
           go build -o "bin/solar-sim${EXT}" ./cmd/solar-sim
 
