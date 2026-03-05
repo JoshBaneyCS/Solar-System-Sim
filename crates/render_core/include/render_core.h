@@ -40,6 +40,12 @@ void render_set_distance_line(Renderer* h,
     double x1, double y1, double z1,
     double x2, double y2, double z2);
 
+void render_set_rt_mode(Renderer* h, uint8_t enabled);
+
+void render_set_rt_quality(Renderer* h,
+    uint32_t samples_per_frame,
+    uint32_t max_bounces);
+
 const uint8_t* render_frame(Renderer* h);
 
 void render_resize(Renderer* h, uint32_t width, uint32_t height);

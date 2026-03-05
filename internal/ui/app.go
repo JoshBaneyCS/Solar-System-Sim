@@ -384,6 +384,11 @@ func (a *App) createControls() *fyne.Container {
 			}
 			a.useGPU = checked && a.gpuRenderer != nil
 		}),
+		widget.NewCheck("Ray Tracing (GPU)", func(checked bool) {
+			if a.gpuRenderer != nil {
+				a.gpuRenderer.SetRTMode(checked)
+			}
+		}),
 		widget.NewSeparator(),
 		widget.NewLabel("Physics Options:"),
 		planetGravityCheck,

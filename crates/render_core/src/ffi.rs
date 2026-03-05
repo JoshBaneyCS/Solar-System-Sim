@@ -226,6 +226,27 @@ pub unsafe extern "C" fn render_set_distance_line(
     }
 }
 
+/// Enable or disable ray tracing mode.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn render_set_rt_mode(h: *mut Renderer, enabled: u8) {
+    let r = unsafe { &mut *h };
+    r.rt_enabled = enabled != 0;
+    r.rt_frame_count = 0;
+}
+
+/// Set ray tracing quality parameters.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn render_set_rt_quality(
+    h: *mut Renderer,
+    samples_per_frame: u32,
+    max_bounces: u32,
+) {
+    let r = unsafe { &mut *h };
+    r.rt_samples_per_frame = samples_per_frame;
+    r.rt_max_bounces = max_bounces;
+    r.rt_frame_count = 0;
+}
+
 /// Render a frame and return pointer to RGBA pixel data.
 /// The returned pointer is valid until the next call to render_frame or render_free.
 #[unsafe(no_mangle)]

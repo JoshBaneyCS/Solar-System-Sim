@@ -111,6 +111,20 @@ func (r *RustRenderer) SetDistanceLine(hasLine bool, x1, y1, z1, x2, y2, z2 floa
 	)
 }
 
+// SetRTMode enables or disables ray tracing mode.
+func (r *RustRenderer) SetRTMode(enabled bool) {
+	e := C.uint8_t(0)
+	if enabled {
+		e = 1
+	}
+	C.render_set_rt_mode(r.handle, e)
+}
+
+// SetRTQuality sets ray tracing quality parameters.
+func (r *RustRenderer) SetRTQuality(samplesPerFrame, maxBounces uint32) {
+	C.render_set_rt_quality(r.handle, C.uint32_t(samplesPerFrame), C.uint32_t(maxBounces))
+}
+
 // RenderFrame renders a frame and returns the RGBA pixel data.
 // The returned slice references Rust-owned memory valid until the next RenderFrame or Free call.
 func (r *RustRenderer) RenderFrame() []byte {

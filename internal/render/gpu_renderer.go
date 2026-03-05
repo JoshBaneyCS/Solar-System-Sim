@@ -65,6 +65,13 @@ func (g *GPURenderer) Refresh() {
 	g.raster.Refresh()
 }
 
+// SetRTMode enables or disables ray tracing.
+func (g *GPURenderer) SetRTMode(enabled bool) {
+	if g.rust != nil {
+		g.rust.SetRTMode(enabled)
+	}
+}
+
 // Free releases GPU resources.
 func (g *GPURenderer) Free() {
 	if g.rust != nil {

@@ -1,5 +1,6 @@
 use crate::camera::Camera;
 use crate::pipeline::Pipelines;
+use crate::raytracer::{RayTracer, RTSphere, RTCameraUniform};
 use crate::shapes::{make_circle_vertices, CircleVertex, LineVertex};
 use crate::spacetime::{generate_grid, SpacetimeBody};
 
@@ -47,6 +48,14 @@ pub struct Renderer {
     pub show_spacetime: bool,
     pub spacetime_bodies: Vec<SpacetimeBody>,
     pub distance_line: Option<DistanceLine>,
+
+    // Ray tracing state
+    pub rt_enabled: bool,
+    pub rt_frame_count: u32,
+    pub rt_samples_per_frame: u32,
+    pub rt_max_bounces: u32,
+    rt_prev_camera_hash: u64,
+    raytracer: Option<RayTracer>,
 }
 
 impl Renderer {
@@ -120,6 +129,12 @@ impl Renderer {
             show_spacetime: false,
             spacetime_bodies: Vec::new(),
             distance_line: None,
+            rt_enabled: false,
+            rt_frame_count: 0,
+            rt_samples_per_frame: 1,
+            rt_max_bounces: 1,
+            rt_prev_camera_hash: 0,
+            raytracer: None,
         })
     }
 
@@ -136,7 +151,7 @@ impl Renderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -179,10 +194,44 @@ impl Renderer {
         // Update projection
         let matrix = self.camera.ortho_matrix();
         self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&matrix));
+
+        // Resize RT if active
+        if let Some(ref mut rt) = self.raytracer {
+            rt.resize(&self.device, width, height);
+        }
+    }
+
+    fn hash_camera_state(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        use std::collections::hash_map::DefaultHasher;
+        let mut h = DefaultHasher::new();
+        self.camera.zoom.to_bits().hash(&mut h);
+        self.camera.pan_x.to_bits().hash(&mut h);
+        self.camera.pan_y.to_bits().hash(&mut h);
+        self.camera.rotation_x.to_bits().hash(&mut h);
+        self.camera.rotation_y.to_bits().hash(&mut h);
+        self.camera.rotation_z.to_bits().hash(&mut h);
+        self.camera.follow_x.to_bits().hash(&mut h);
+        self.camera.follow_y.to_bits().hash(&mut h);
+        self.camera.follow_z.to_bits().hash(&mut h);
+        (self.camera.use_3d as u64).hash(&mut h);
+        // Also hash body positions to reset accumulation on movement
+        for body in &self.bodies {
+            body.screen_x.to_bits().hash(&mut h);
+            body.screen_y.to_bits().hash(&mut h);
+        }
+        if let Some(ref sun) = self.sun {
+            sun.screen_x.to_bits().hash(&mut h);
+            sun.screen_y.to_bits().hash(&mut h);
+        }
+        h.finish()
     }
 
     /// Render a frame and return a pointer to RGBA pixel data.
     pub fn render_frame(&mut self) -> &[u8] {
+        if self.rt_enabled {
+            return self.render_frame_rt();
+        }
         // Update projection uniform
         let matrix = self.camera.ortho_matrix();
         self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&matrix));
@@ -424,5 +473,256 @@ impl Renderer {
         self.readback_buffer.unmap();
 
         &self.pixel_data
+    }
+
+    /// Ray-traced render path: RT compute for bodies, then raster overlays.
+    fn render_frame_rt(&mut self) -> &[u8] {
+        // Lazy-init RayTracer
+        if self.raytracer.is_none() {
+            self.raytracer = RayTracer::new(&self.device, self.width, self.height);
+        }
+        let rt = match self.raytracer.as_ref() {
+            Some(rt) => rt,
+            None => return self.render_frame_raster(), // fallback if RT init fails
+        };
+
+        // Camera change detection for accumulation reset
+        let cam_hash = self.hash_camera_state();
+        if cam_hash != self.rt_prev_camera_hash {
+            self.rt_frame_count = 0;
+            self.rt_prev_camera_hash = cam_hash;
+            rt.reset_accumulation(&self.queue);
+        }
+
+        // Build RT sphere list: sun first (emissive), then planets
+        let mut spheres = Vec::new();
+        if let Some(ref sun) = self.sun {
+            spheres.push(RTSphere {
+                center: [sun.screen_x, sun.screen_y, 0.0],
+                radius: sun.radius,
+                color: sun.color,
+                material: 1, // emissive
+                _pad: [0; 3],
+            });
+        }
+        for body in &self.bodies {
+            spheres.push(RTSphere {
+                center: [body.screen_x, body.screen_y, 0.0],
+                radius: body.radius,
+                color: body.color,
+                material: 0, // diffuse
+                _pad: [0; 3],
+            });
+        }
+
+        let sun_screen = self.sun.as_ref()
+            .map(|s| (s.screen_x, s.screen_y))
+            .unwrap_or((self.width as f32 / 2.0, self.height as f32 / 2.0));
+
+        let camera_uniform = RTCameraUniform {
+            width: self.width as f32,
+            height: self.height as f32,
+            frame_count: self.rt_frame_count,
+            num_spheres: spheres.len() as u32,
+            sun_screen_x: sun_screen.0,
+            sun_screen_y: sun_screen.1,
+            samples_per_frame: self.rt_samples_per_frame,
+            max_bounces: self.rt_max_bounces,
+        };
+
+        // Update projection uniform for overlay pass
+        let matrix = self.camera.ortho_matrix();
+        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&matrix));
+
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("rt_encoder"),
+        });
+
+        // Dispatch RT compute shader
+        rt.dispatch(&self.device, &self.queue, &mut encoder, &spheres, &camera_uniform);
+
+        // Copy RT output -> main render texture
+        encoder.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &rt.output_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        // Render 2D overlays on top (trails, spacetime, distance line — NOT circles/glow)
+        let spacetime_verts = if self.show_spacetime && !self.spacetime_bodies.is_empty() {
+            generate_grid(
+                self.width as f64,
+                self.height as f64,
+                self.camera.zoom,
+                self.camera.pan_x,
+                self.camera.pan_y,
+                &self.spacetime_bodies,
+            )
+        } else {
+            Vec::new()
+        };
+
+        let trail_verts: Vec<LineVertex> = if self.show_trails {
+            self.trails.iter().flat_map(|t| t.vertices.iter().copied()).collect()
+        } else {
+            Vec::new()
+        };
+
+        let mut dist_line_verts: Vec<LineVertex> = Vec::new();
+        if let Some(ref dl) = self.distance_line {
+            let color = [1.0, 1.0, 0.0, 0.706];
+            dist_line_verts.push(LineVertex { position: [dl.x1, dl.y1], color });
+            dist_line_verts.push(LineVertex { position: [dl.x2, dl.y2], color });
+        }
+
+        // Create GPU buffers for overlays
+        let spacetime_buf = if !spacetime_verts.is_empty() {
+            let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("rt_spacetime_vb"),
+                size: (spacetime_verts.len() * std::mem::size_of::<LineVertex>()) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.queue.write_buffer(&buf, 0, bytemuck::cast_slice(&spacetime_verts));
+            Some(buf)
+        } else {
+            None
+        };
+
+        let trail_buf = if !trail_verts.is_empty() {
+            let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("rt_trail_vb"),
+                size: (trail_verts.len() * std::mem::size_of::<LineVertex>()) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.queue.write_buffer(&buf, 0, bytemuck::cast_slice(&trail_verts));
+            Some(buf)
+        } else {
+            None
+        };
+
+        let dist_buf = if !dist_line_verts.is_empty() {
+            let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("rt_dist_vb"),
+                size: (dist_line_verts.len() * std::mem::size_of::<LineVertex>()) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.queue.write_buffer(&buf, 0, bytemuck::cast_slice(&dist_line_verts));
+            Some(buf)
+        } else {
+            None
+        };
+
+        // Overlay render pass with LoadOp::Load to preserve RT output
+        let has_overlays = spacetime_buf.is_some() || trail_buf.is_some() || dist_buf.is_some();
+        if has_overlays {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("rt_overlay_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.texture_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            pass.set_bind_group(0, Some(&self.bind_group), &[]);
+
+            if let Some(ref buf) = spacetime_buf {
+                pass.set_pipeline(&self.pipelines.line);
+                pass.set_vertex_buffer(0, buf.slice(..));
+                pass.draw(0..spacetime_verts.len() as u32, 0..1);
+            }
+
+            if let Some(ref buf) = trail_buf {
+                pass.set_pipeline(&self.pipelines.line);
+                pass.set_vertex_buffer(0, buf.slice(..));
+                pass.draw(0..trail_verts.len() as u32, 0..1);
+            }
+
+            if let Some(ref buf) = dist_buf {
+                pass.set_pipeline(&self.pipelines.line);
+                pass.set_vertex_buffer(0, buf.slice(..));
+                pass.draw(0..dist_line_verts.len() as u32, 0..1);
+            }
+        }
+
+        // Readback
+        let padded_bpr = Self::padded_bytes_per_row(self.width);
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &self.readback_buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_bpr),
+                    rows_per_image: Some(self.height),
+                },
+            },
+            wgpu::Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        let buffer_slice = self.readback_buffer.slice(..);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+        self.device.poll(wgpu::Maintain::Wait);
+        let _ = receiver.recv();
+
+        {
+            let data = buffer_slice.get_mapped_range();
+            let unpadded_bpr = (self.width * 4) as usize;
+            let padded = padded_bpr as usize;
+
+            for row in 0..self.height as usize {
+                let src_start = row * padded;
+                let dst_start = row * unpadded_bpr;
+                self.pixel_data[dst_start..dst_start + unpadded_bpr]
+                    .copy_from_slice(&data[src_start..src_start + unpadded_bpr]);
+            }
+        }
+        self.readback_buffer.unmap();
+
+        self.rt_frame_count += 1;
+        &self.pixel_data
+    }
+
+    /// Fallback: call the raster path (used when RT init fails).
+    fn render_frame_raster(&mut self) -> &[u8] {
+        self.rt_enabled = false;
+        self.render_frame()
     }
 }
