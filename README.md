@@ -3,6 +3,8 @@
 </p>
 
 <h1 align="center">Solar System Simulator</h1>
+<h2 align="center">Version 0.1.1</h2>
+
 
 <p align="center">
   GPU-Accelerated, Physically Accurate &mdash; Go GUI + Rust Kernels
