@@ -1,4 +1,4 @@
-.PHONY: all build build-cli build-solar-sim build-solar-sim-headless run test bench clean deps dev help rust-build rust-test rust-clean build-rust test-rust run-rust render-build build-gpu run-gpu test-gpu assets-setup meshgen validate-assets
+.PHONY: all build build-cli build-solar-sim build-solar-sim-headless run test bench clean deps dev help lint vet rust-build rust-test rust-clean build-rust test-rust run-rust render-build build-gpu run-gpu test-gpu assets-setup meshgen validate-assets
 
 # Default target
 all: deps build
@@ -167,6 +167,16 @@ dev:
 vet:
 	@go vet ./...
 
+# Run linters (Go + Rust)
+lint:
+	@echo "Checking Go formatting..."
+	@test -z "$$(gofmt -l .)" || (echo "Files need gofmt:" && gofmt -l . && exit 1)
+	@echo "Running go vet..."
+	@go vet ./...
+	@if [ -d crates/physics_core ]; then echo "Running clippy (physics_core)..." && cd crates/physics_core && cargo clippy 2>/dev/null; fi
+	@if [ -d crates/render_core ]; then echo "Running clippy (render_core)..." && cd crates/render_core && cargo clippy 2>/dev/null; fi
+	@echo "Lint passed."
+
 # Help
 help:
 	@echo "Solar System Simulator - Makefile targets:"
@@ -183,6 +193,7 @@ help:
 	@echo "  make clean     - Remove build artifacts"
 	@echo "  make dev       - Build with race detector and run"
 	@echo "  make vet       - Run go vet on all packages"
+	@echo "  make lint      - Run linters (Go formatting + vet + Rust clippy)"
 	@echo "  make help      - Show this help message"
 	@echo ""
 	@echo "Rust physics backend:"

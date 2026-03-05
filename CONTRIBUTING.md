@@ -1,10 +1,3 @@
 # Contributing
 
-## Dev workflow
-- format/lint
-- tests
-- PR checklist
-
-## Repo conventions
-- Go: gofmt
-- Rust: rustfmt + clippy
+See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for the full contributing guide.
