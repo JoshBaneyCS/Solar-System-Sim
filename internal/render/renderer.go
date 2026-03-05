@@ -159,6 +159,66 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 	return container.NewWithoutLayout(objects...)
 }
 
+// CreateLabelOverlay returns only text labels as a container (for GPU render mode overlay).
+func (r *Renderer) CreateLabelOverlay() *fyne.Container {
+	r.Cache.Reset()
+
+	planets := r.Simulator.GetPlanetSnapshot()
+	sun := r.Simulator.GetSunSnapshot()
+
+	r.Viewport.RLock()
+	canvasWidth := r.Viewport.CanvasWidth
+	canvasHeight := r.Viewport.CanvasHeight
+	r.Viewport.RUnlock()
+
+	objects := []fyne.CanvasObject{}
+
+	sunX, sunY := r.Viewport.WorldToScreen(sun.Position)
+	if r.isOnScreen(sunX, sunY, canvasWidth, canvasHeight) {
+		sunRadius := float32(sun.Radius)
+		sunLabel := r.Cache.GetText("Sun", color.White)
+		sunLabel.TextSize = 10
+		sunLabel.Move(fyne.NewPos(sunX+sunRadius+5, sunY-5))
+		objects = append(objects, sunLabel)
+	}
+
+	for _, planet := range planets {
+		x, y := r.Viewport.WorldToScreen(planet.Position)
+		if r.isOnScreen(x, y, canvasWidth, canvasHeight) {
+			planetRadius := float32(planet.Radius)
+			label := r.Cache.GetText(planet.Name, color.White)
+			label.TextSize = 10
+			label.Move(fyne.NewPos(x+planetRadius+3, y-5))
+			objects = append(objects, label)
+		}
+	}
+
+	if len(r.SelectedBodies) == 2 {
+		pos1 := r.SelectedBodies[0].Position
+		pos2 := r.SelectedBodies[1].Position
+
+		x1, y1 := r.Viewport.WorldToScreen(pos1)
+		x2, y2 := r.Viewport.WorldToScreen(pos2)
+
+		dist := pos2.Sub(pos1).Magnitude()
+		distAU := dist / constants.AU
+		distKm := dist / 1000
+		lightMinutes := dist / (299792458.0 * 60)
+
+		midX := (x1 + x2) / 2
+		midY := (y1 + y2) / 2
+
+		distText := fmt.Sprintf("%.3f AU\n%.2e km\n%.2f light-min", distAU, distKm, lightMinutes)
+		distLabel := r.Cache.GetText(distText, color.RGBA{255, 255, 0, 255})
+		distLabel.TextSize = 12
+		distLabel.Alignment = fyne.TextAlignCenter
+		distLabel.Move(fyne.NewPos(midX-50, midY-30))
+		objects = append(objects, distLabel)
+	}
+
+	return container.NewWithoutLayout(objects...)
+}
+
 func (r *Renderer) isOnScreen(x, y float32, width, height float64) bool {
 	margin := float32(100)
 	return x >= -margin && x <= float32(width)+margin &&

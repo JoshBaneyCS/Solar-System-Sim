@@ -21,12 +21,14 @@ import (
 
 // App is the main application
 type App struct {
-	fyneApp   fyne.App
-	window    fyne.Window
-	simulator *physics.Simulator
-	viewport  *viewport.ViewPort
-	renderer  *render.Renderer
-	canvas    *fyne.Container
+	fyneApp      fyne.App
+	window       fyne.Window
+	simulator    *physics.Simulator
+	viewport     *viewport.ViewPort
+	renderer     *render.Renderer
+	canvas       *fyne.Container
+	gpuRenderer  *render.GPURenderer
+	useGPU       bool
 }
 
 func NewApp() *App {
@@ -376,6 +378,12 @@ func (a *App) createControls() *fyne.Container {
 		widget.NewLabel("Display Options:"),
 		trailsCheck,
 		spacetimeCheck,
+		widget.NewCheck("GPU Rendering", func(checked bool) {
+			if checked && a.gpuRenderer == nil {
+				a.gpuRenderer = a.initGPU()
+			}
+			a.useGPU = checked && a.gpuRenderer != nil
+		}),
 		widget.NewSeparator(),
 		widget.NewLabel("Physics Options:"),
 		planetGravityCheck,
@@ -462,8 +470,16 @@ func (a *App) Run() {
 		ticker := time.NewTicker(16 * time.Millisecond)
 		for range ticker.C {
 			a.simulator.Update(constants.BaseTimeStep)
-			a.canvas.Objects = a.renderer.CreateCanvas().Objects
-			a.canvas.Refresh()
+			if a.useGPU && a.gpuRenderer != nil {
+				// GPU render path: raster + text label overlay
+				labels := a.gpuRenderer.CreateLabelOverlay()
+				a.canvas.Objects = []fyne.CanvasObject{a.gpuRenderer.Raster(), labels}
+				a.gpuRenderer.Refresh()
+				a.canvas.Refresh()
+			} else {
+				a.canvas.Objects = a.renderer.CreateCanvas().Objects
+				a.canvas.Refresh()
+			}
 		}
 	}()
 
