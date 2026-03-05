@@ -34,29 +34,29 @@ fn adaptive_resolution(zoom: f64) -> usize {
 /// Gradient: dark blue → magenta → red → yellow, alpha 180/255.
 fn interpolate_color(normalized_potential: f64) -> [f32; 4] {
     let t = (1.0 - normalized_potential).clamp(0.0, 1.0);
-    let alpha = 180.0 / 255.0;
+    let alpha: f32 = 180.0 / 255.0;
 
     if t < 0.33 {
         let ratio = t / 0.33;
         [
-            (100.0 * ratio) / 255.0,
+            ((100.0 * ratio) / 255.0) as f32,
             0.0,
-            (50.0 + 100.0 * ratio) / 255.0,
+            ((50.0 + 100.0 * ratio) / 255.0) as f32,
             alpha,
         ]
     } else if t < 0.66 {
         let ratio = (t - 0.33) / 0.33;
         [
-            (100.0 + 100.0 * ratio) / 255.0,
+            ((100.0 + 100.0 * ratio) / 255.0) as f32,
             0.0,
-            (150.0 - 150.0 * ratio) / 255.0,
+            ((150.0 - 150.0 * ratio) / 255.0) as f32,
             alpha,
         ]
     } else {
         let ratio = (t - 0.66) / 0.34;
         [
-            (200.0 + 55.0 * ratio) / 255.0,
-            (100.0 * ratio) / 255.0,
+            ((200.0 + 55.0 * ratio) / 255.0) as f32,
+            ((100.0 * ratio) / 255.0) as f32,
             0.0,
             alpha,
         ]
