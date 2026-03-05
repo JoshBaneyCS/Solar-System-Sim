@@ -1,7 +1,10 @@
-package main
+package physics
 
 import (
 	"testing"
+
+	"solar-system-sim/internal/math3d"
+	"solar-system-sim/pkg/constants"
 )
 
 func TestSunOnlyGravity(t *testing.T) {
@@ -9,9 +12,8 @@ func TestSunOnlyGravity(t *testing.T) {
 	sim.PlanetGravityEnabled = false
 	sim.RelativisticEffects = false
 
-	// Place a test body at 1 AU on the x-axis
-	bodyPos := Vec3{AU, 0, 0}
-	bodyVel := Vec3{0, 29784, 0} // approximate Earth orbital velocity
+	bodyPos := math3d.Vec3{X: constants.AU, Y: 0, Z: 0}
+	bodyVel := math3d.Vec3{X: 0, Y: 29784, Z: 0}
 	bodyMass := 5.972e24
 
 	states := make([]BodyState, len(sim.Planets))
@@ -19,15 +21,13 @@ func TestSunOnlyGravity(t *testing.T) {
 		states[i] = BodyState{Position: p.Position, Velocity: p.Velocity}
 	}
 
-	accel := sim.calculateAccelerationWithSnapshot(0, bodyPos, bodyVel, bodyMass, "TestBody", states)
+	accel := sim.CalculateAccelerationWithSnapshot(0, bodyPos, bodyVel, bodyMass, "TestBody", states)
 
-	// Expected: GM/r² pointing toward Sun (-x direction)
-	expectedMag := G * sim.SunMass / (AU * AU)
+	expectedMag := constants.G * sim.SunMass / (constants.AU * constants.AU)
 	gotMag := accel.Magnitude()
 
 	assertRelativeError(t, gotMag, expectedMag, 1e-8, "acceleration magnitude")
 
-	// Should point in -x direction
 	if accel.X >= 0 {
 		t.Errorf("expected negative X acceleration (toward Sun), got %e", accel.X)
 	}
@@ -45,15 +45,12 @@ func TestInverseSquareLaw(t *testing.T) {
 		states[i] = BodyState{Position: p.Position, Velocity: p.Velocity}
 	}
 
-	// Acceleration at 1 AU
-	accel1 := sim.calculateAccelerationWithSnapshot(0, Vec3{AU, 0, 0}, Vec3{0, 0, 0}, 1e24, "Test", states)
-	// Acceleration at 2 AU
-	accel2 := sim.calculateAccelerationWithSnapshot(0, Vec3{2 * AU, 0, 0}, Vec3{0, 0, 0}, 1e24, "Test", states)
+	accel1 := sim.CalculateAccelerationWithSnapshot(0, math3d.Vec3{X: constants.AU}, math3d.Vec3{}, 1e24, "Test", states)
+	accel2 := sim.CalculateAccelerationWithSnapshot(0, math3d.Vec3{X: 2 * constants.AU}, math3d.Vec3{}, 1e24, "Test", states)
 
 	mag1 := accel1.Magnitude()
 	mag2 := accel2.Magnitude()
 
-	// At 2x distance, acceleration should be 1/4
 	ratio := mag1 / mag2
 	assertRelativeError(t, ratio, 4.0, 1e-8, "inverse square ratio")
 }
@@ -68,22 +65,18 @@ func TestNBodyGravity(t *testing.T) {
 		states[i] = BodyState{Position: p.Position, Velocity: p.Velocity}
 	}
 
-	// Get acceleration with N-body enabled
-	accelNBody := sim.calculateAccelerationWithSnapshot(0, sim.Planets[0].Position, sim.Planets[0].Velocity,
+	accelNBody := sim.CalculateAccelerationWithSnapshot(0, sim.Planets[0].Position, sim.Planets[0].Velocity,
 		sim.Planets[0].Mass, sim.Planets[0].Name, states)
 
-	// Get acceleration with N-body disabled
 	sim.PlanetGravityEnabled = false
-	accelSunOnly := sim.calculateAccelerationWithSnapshot(0, sim.Planets[0].Position, sim.Planets[0].Velocity,
+	accelSunOnly := sim.CalculateAccelerationWithSnapshot(0, sim.Planets[0].Position, sim.Planets[0].Velocity,
 		sim.Planets[0].Mass, sim.Planets[0].Name, states)
 
-	// N-body acceleration should differ from Sun-only
 	diff := accelNBody.Sub(accelSunOnly)
 	if diff.Magnitude() < 1e-20 {
 		t.Error("N-body contribution should be non-zero")
 	}
 
-	// But Sun dominates: N-body perturbation should be small relative to Sun gravity
 	ratio := diff.Magnitude() / accelSunOnly.Magnitude()
 	if ratio > 0.01 {
 		t.Errorf("N-body perturbation too large relative to Sun: ratio = %e", ratio)
@@ -100,9 +93,8 @@ func TestGravitySymmetry(t *testing.T) {
 		states[i] = BodyState{Position: p.Position, Velocity: p.Velocity}
 	}
 
-	// Acceleration at (AU, 0, 0) and (-AU, 0, 0) should have same magnitude
-	accelPos := sim.calculateAccelerationWithSnapshot(0, Vec3{AU, 0, 0}, Vec3{}, 1e24, "Test", states)
-	accelNeg := sim.calculateAccelerationWithSnapshot(0, Vec3{-AU, 0, 0}, Vec3{}, 1e24, "Test", states)
+	accelPos := sim.CalculateAccelerationWithSnapshot(0, math3d.Vec3{X: constants.AU}, math3d.Vec3{}, 1e24, "Test", states)
+	accelNeg := sim.CalculateAccelerationWithSnapshot(0, math3d.Vec3{X: -constants.AU}, math3d.Vec3{}, 1e24, "Test", states)
 
 	assertRelativeError(t, accelPos.Magnitude(), accelNeg.Magnitude(), 1e-10, "symmetric magnitude")
 }

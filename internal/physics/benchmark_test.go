@@ -1,6 +1,10 @@
-package main
+package physics
 
-import "testing"
+import (
+	"testing"
+
+	"solar-system-sim/pkg/constants"
+)
 
 func BenchmarkStep(b *testing.B) {
 	sim := NewSimulator()
@@ -8,7 +12,7 @@ func BenchmarkStep(b *testing.B) {
 	sim.RelativisticEffects = true
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		sim.step(baseTimeStep)
+		sim.Step(constants.BaseTimeStep)
 	}
 }
 
@@ -18,7 +22,7 @@ func BenchmarkStepNewtonianOnly(b *testing.B) {
 	sim.RelativisticEffects = false
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		sim.step(baseTimeStep)
+		sim.Step(constants.BaseTimeStep)
 	}
 }
 
@@ -28,7 +32,7 @@ func BenchmarkStepNBody(b *testing.B) {
 	sim.RelativisticEffects = false
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		sim.step(baseTimeStep)
+		sim.Step(constants.BaseTimeStep)
 	}
 }
 
@@ -42,7 +46,7 @@ func BenchmarkCalculateAcceleration(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		sim.calculateAccelerationWithSnapshot(0, sim.Planets[0].Position, sim.Planets[0].Velocity,
+		sim.CalculateAccelerationWithSnapshot(0, sim.Planets[0].Position, sim.Planets[0].Velocity,
 			sim.Planets[0].Mass, sim.Planets[0].Name, states)
 	}
 }

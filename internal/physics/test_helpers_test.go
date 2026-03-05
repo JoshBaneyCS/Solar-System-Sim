@@ -1,8 +1,10 @@
-package main
+package physics
 
 import (
 	"math"
 	"testing"
+
+	"solar-system-sim/internal/math3d"
 )
 
 const testEpsilon = 1e-9
@@ -14,7 +16,7 @@ func assertFloat64Near(t *testing.T, got, want, tol float64, msg string) {
 	}
 }
 
-func assertVec3Near(t *testing.T, got, want Vec3, tol float64) {
+func assertVec3Near(t *testing.T, got, want math3d.Vec3, tol float64) {
 	t.Helper()
 	assertFloat64Near(t, got.X, want.X, tol, "X")
 	assertFloat64Near(t, got.Y, want.Y, tol, "Y")

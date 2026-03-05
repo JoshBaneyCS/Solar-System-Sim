@@ -1,12 +1,13 @@
-package main
+package physics
 
 import (
 	"math"
 	"testing"
+
+	"solar-system-sim/internal/math3d"
+	"solar-system-sim/pkg/constants"
 )
 
-// computeTotalEnergy calculates the total mechanical energy of the system.
-// E = Σ(½mv²) + Σ(-GMm/r) for each planet relative to the Sun.
 func computeTotalEnergy(sim *Simulator) float64 {
 	totalE := 0.0
 	for _, p := range sim.Planets {
@@ -14,16 +15,15 @@ func computeTotalEnergy(sim *Simulator) float64 {
 		r := p.Position.Sub(sim.Sun.Position).Magnitude()
 
 		kinetic := 0.5 * p.Mass * v * v
-		potential := -G * sim.SunMass * p.Mass / r
+		potential := -constants.G * sim.SunMass * p.Mass / r
 
 		totalE += kinetic + potential
 	}
 	return totalE
 }
 
-// computeTotalAngularMomentum calculates L = Σ m(r × v) for all planets.
-func computeTotalAngularMomentum(sim *Simulator) Vec3 {
-	totalL := Vec3{}
+func computeTotalAngularMomentum(sim *Simulator) math3d.Vec3 {
+	totalL := math3d.Vec3{}
 	for _, p := range sim.Planets {
 		r := p.Position.Sub(sim.Sun.Position)
 		L := r.Cross(p.Velocity).Mul(p.Mass)
@@ -34,14 +34,13 @@ func computeTotalAngularMomentum(sim *Simulator) Vec3 {
 
 func TestEnergyConservation(t *testing.T) {
 	sim := NewSimulator()
-	sim.PlanetGravityEnabled = false // Sun-only for cleaner energy conservation
+	sim.PlanetGravityEnabled = false
 	sim.RelativisticEffects = false
 
 	E0 := computeTotalEnergy(sim)
 
-	// Run 1000 steps at default timestep
 	for i := 0; i < 1000; i++ {
-		sim.step(baseTimeStep)
+		sim.Step(constants.BaseTimeStep)
 	}
 
 	E1 := computeTotalEnergy(sim)
@@ -62,12 +61,11 @@ func TestAngularMomentumConservation(t *testing.T) {
 	L0 := computeTotalAngularMomentum(sim)
 
 	for i := 0; i < 1000; i++ {
-		sim.step(baseTimeStep)
+		sim.Step(constants.BaseTimeStep)
 	}
 
 	L1 := computeTotalAngularMomentum(sim)
 
-	// Check each component
 	for _, comp := range []struct {
 		name string
 		v0   float64
@@ -96,26 +94,21 @@ func TestEarthOrbitalPeriod(t *testing.T) {
 	sim.PlanetGravityEnabled = false
 	sim.RelativisticEffects = false
 
-	// Earth is at index 2
 	earthIdx := 2
 
-	// Record initial angle of Earth relative to Sun
 	initialPos := sim.Planets[earthIdx].Position
 	initialAngle := math.Atan2(initialPos.Y, initialPos.X)
 
 	prevAngle := initialAngle
 	totalAngle := 0.0
 
-	// Run until Earth completes one full orbit (2π radians of angular travel)
-	// Expected: ~365.25 days = 365.25 * 86400 / 7200 ≈ 4383 steps
 	maxSteps := 6000
 	for step := 0; step < maxSteps; step++ {
-		sim.step(baseTimeStep)
+		sim.Step(constants.BaseTimeStep)
 
 		pos := sim.Planets[earthIdx].Position
 		angle := math.Atan2(pos.Y, pos.X)
 
-		// Accumulate angular change, handling wrapping
 		dAngle := angle - prevAngle
 		if dAngle > math.Pi {
 			dAngle -= 2 * math.Pi
@@ -150,7 +143,7 @@ func TestEnergyConservationWithNBody(t *testing.T) {
 	E0 := computeTotalEnergy(sim)
 
 	for i := 0; i < 1000; i++ {
-		sim.step(baseTimeStep)
+		sim.Step(constants.BaseTimeStep)
 	}
 
 	E1 := computeTotalEnergy(sim)
@@ -158,8 +151,6 @@ func TestEnergyConservationWithNBody(t *testing.T) {
 	relDrift := math.Abs((E1 - E0) / E0)
 	t.Logf("N-body energy: initial=%e, final=%e, relative drift=%e", E0, E1, relDrift)
 
-	// N-body energy conservation is slightly worse due to planet-planet interactions
-	// but should still be good with RK4
 	if relDrift > 1e-5 {
 		t.Errorf("N-body energy conservation violated: relative drift %e > 1e-5", relDrift)
 	}
