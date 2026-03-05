@@ -1,12 +1,36 @@
 use crate::renderer::{BodyData, DistanceLine, Renderer, TrailData};
 use crate::shapes::LineVertex;
 use crate::spacetime::SpacetimeBody;
+use crate::textures::BODY_NAMES;
 use std::slice;
 
 /// Create a new GPU renderer. Returns null on failure.
 #[unsafe(no_mangle)]
 pub extern "C" fn render_create(width: u32, height: u32) -> *mut Renderer {
     match Renderer::new(width, height) {
+        Some(r) => Box::into_raw(Box::new(r)),
+        None => std::ptr::null_mut(),
+    }
+}
+
+/// Create a new GPU renderer with texture loading from an asset directory.
+/// `asset_dir` should point to the textures directory (e.g. "assets/textures").
+/// Pass null to create without textures (same as render_create).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn render_create_with_textures(
+    width: u32,
+    height: u32,
+    asset_dir: *const std::ffi::c_char,
+) -> *mut Renderer {
+    let dir = if asset_dir.is_null() {
+        None
+    } else {
+        match unsafe { std::ffi::CStr::from_ptr(asset_dir) }.to_str() {
+            Ok(s) => Some(s),
+            Err(_) => None,
+        }
+    };
+    match Renderer::new_with_textures(width, height, dir) {
         Some(r) => Box::into_raw(Box::new(r)),
         None => std::ptr::null_mut(),
     }
@@ -76,10 +100,12 @@ pub unsafe extern "C" fn render_set_bodies(
             screen_y: sy,
             radius: rad[i] as f32,
             color: [col[i * 4] as f32, col[i * 4 + 1] as f32, col[i * 4 + 2] as f32, col[i * 4 + 3] as f32],
+            texture_index: i as i32, // maps to BODY_NAMES[i]
         });
     }
 
-    // Sun
+    // Sun — texture index is the last entry in BODY_NAMES
+    let sun_tex_idx = (BODY_NAMES.len() - 1) as i32;
     let sp = unsafe { slice::from_raw_parts(sun_pos, 3) };
     let sc = unsafe { slice::from_raw_parts(sun_color, 4) };
     let (sx, sy) = r.camera.world_to_screen(sp[0], sp[1], sp[2]);
@@ -88,6 +114,7 @@ pub unsafe extern "C" fn render_set_bodies(
         screen_y: sy,
         radius: sun_radius as f32,
         color: [sc[0] as f32, sc[1] as f32, sc[2] as f32, sc[3] as f32],
+        texture_index: sun_tex_idx,
     });
 }
 

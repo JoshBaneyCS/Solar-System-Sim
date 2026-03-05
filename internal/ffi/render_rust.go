@@ -27,6 +27,24 @@ func NewRustRenderer(width, height uint32) *RustRenderer {
 	return &RustRenderer{handle: handle, width: width, height: height}
 }
 
+// NewRustRendererWithTextures creates a GPU renderer with texture loading.
+// assetDir should point to the textures directory (e.g. "assets/textures").
+// Pass empty string to create without textures.
+func NewRustRendererWithTextures(width, height uint32, assetDir string) *RustRenderer {
+	var handle *C.Renderer
+	if assetDir == "" {
+		handle = C.render_create(C.uint32_t(width), C.uint32_t(height))
+	} else {
+		cDir := C.CString(assetDir)
+		defer C.free(unsafe.Pointer(cDir))
+		handle = C.render_create_with_textures(C.uint32_t(width), C.uint32_t(height), cDir)
+	}
+	if handle == nil {
+		return nil
+	}
+	return &RustRenderer{handle: handle, width: width, height: height}
+}
+
 // SetCamera updates camera parameters.
 func (r *RustRenderer) SetCamera(zoom, panX, panY, rotX, rotY, rotZ float64, use3D bool, followX, followY, followZ float64) {
 	u3d := C.uint8_t(0)

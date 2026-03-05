@@ -5,6 +5,8 @@ package render
 import (
 	"image"
 	"image/color"
+	"os"
+	"path/filepath"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -25,9 +27,33 @@ type GPURenderer struct {
 	height    uint32
 }
 
+// resolveAssetDir finds the assets/textures directory.
+func resolveAssetDir() string {
+	// Try relative to working directory first (common for development)
+	candidates := []string{
+		filepath.Join("assets", "textures"),
+	}
+	// Try relative to executable
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		candidates = append(candidates,
+			filepath.Join(dir, "assets", "textures"),
+			filepath.Join(dir, "..", "assets", "textures"),
+		)
+	}
+	for _, c := range candidates {
+		if info, err := os.Stat(c); err == nil && info.IsDir() {
+			abs, _ := filepath.Abs(c)
+			return abs
+		}
+	}
+	return ""
+}
+
 // NewGPURenderer creates a GPU renderer. Returns nil if GPU init fails.
 func NewGPURenderer(sim *physics.Simulator, vp *viewport.ViewPort, r *Renderer, width, height uint32) *GPURenderer {
-	rust := ffi.NewRustRenderer(width, height)
+	assetDir := resolveAssetDir()
+	rust := ffi.NewRustRendererWithTextures(width, height, assetDir)
 	if rust == nil {
 		return nil
 	}

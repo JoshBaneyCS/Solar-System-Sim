@@ -1,5 +1,5 @@
 /// GPU compute shader ray tracer for sphere primitives.
-/// Provides shadows, ambient occlusion, and progressive accumulation.
+/// Provides shadows, ambient occlusion, progressive accumulation, and texture sampling.
 
 const RT_SHADER: &str = r#"
 struct Sphere {
@@ -7,7 +7,7 @@ struct Sphere {
     radius: f32,
     color: vec4<f32>,
     material: u32,
-    _pad1: u32,
+    texture_index: i32,
     _pad2: u32,
     _pad3: u32,
 };
@@ -27,6 +27,8 @@ struct Camera {
 @group(0) @binding(1) var<storage, read> spheres: array<Sphere>;
 @group(0) @binding(2) var<uniform> cam: Camera;
 @group(0) @binding(3) var<storage, read_write> accum: array<vec4<f32>>;
+@group(0) @binding(4) var texture_atlas: texture_2d_array<f32>;
+@group(0) @binding(5) var texture_sampler: sampler;
 
 fn pcg_hash(input: u32) -> u32 {
     var state = input * 747796405u + 2891336453u;
@@ -70,6 +72,14 @@ fn build_tangent_frame(n: vec3<f32>, r1: f32, r2: f32) -> vec3<f32> {
     return normalize(tangent * cos(phi) * sin_theta + b * sin(phi) * sin_theta + n * cos_theta);
 }
 
+// Compute spherical UV from a surface normal for texture sampling.
+// For orthographic rays in +Z direction, negate Z for front-facing hemisphere.
+fn sphere_uv(normal: vec3<f32>) -> vec2<f32> {
+    let u = 0.5 + atan2(normal.x, -normal.z) / 6.283185;
+    let v = 0.5 - asin(clamp(normal.y, -1.0, 1.0)) / 3.141593;
+    return vec2<f32>(u, v);
+}
+
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let px = id.x;
@@ -105,10 +115,18 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let hit_point = ray_origin + ray_dir * min_t;
         let hit_normal = normalize(hit_point - sphere.center);
 
+        // Get base color (from texture if available, otherwise solid color)
+        var base_color = sphere.color.rgb;
+        if sphere.texture_index >= 0 {
+            let uv = sphere_uv(hit_normal);
+            let tex_color = textureSampleLevel(texture_atlas, texture_sampler, uv, sphere.texture_index, 0.0);
+            base_color = tex_color.rgb;
+        }
+
         if sphere.material == 1u {
             // Emissive (sun) — self-lit with glow
             let glow = 1.0 + 0.3 * max(0.0, 1.0 - length(hit_point.xy - sphere.center.xy) / sphere.radius);
-            pixel_color = sphere.color.rgb * glow;
+            pixel_color = base_color * glow;
         } else {
             // Light direction toward sun
             let sun_pos = vec3<f32>(cam.sun_screen_x, cam.sun_screen_y, 0.0);
@@ -155,7 +173,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             var diffuse: f32 = 0.0;
             if !in_shadow { diffuse = ndotl; }
 
-            pixel_color = sphere.color.rgb * (ambient + diffuse * 0.9) * ao_factor;
+            pixel_color = base_color * (ambient + diffuse * 0.9) * ao_factor;
 
             // Glossy reflection for gas giants (material == 2)
             if sphere.material == 2u {
@@ -202,7 +220,8 @@ pub struct RTSphere {
     pub radius: f32,
     pub color: [f32; 4],
     pub material: u32,
-    pub _pad: [u32; 3],
+    pub texture_index: i32,
+    pub _pad: [u32; 2],
 }
 
 /// Camera uniform for the RT compute shader.
@@ -283,6 +302,24 @@ impl RayTracer {
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
+                    count: None,
+                },
+                // texture atlas
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                // texture sampler
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
@@ -388,6 +425,8 @@ impl RayTracer {
         encoder: &mut wgpu::CommandEncoder,
         spheres: &[RTSphere],
         camera: &RTCameraUniform,
+        texture_view: &wgpu::TextureView,
+        texture_sampler: &wgpu::Sampler,
     ) {
         // Upload sphere data
         queue.write_buffer(&self.sphere_buffer, 0, bytemuck::cast_slice(spheres));
@@ -413,6 +452,14 @@ impl RayTracer {
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: self.accumulation_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::Sampler(texture_sampler),
                 },
             ],
         });

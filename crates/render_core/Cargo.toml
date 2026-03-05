@@ -12,3 +12,4 @@ wgpu = "24"
 bytemuck = { version = "1", features = ["derive"] }
 pollster = "0.4"
 log = "0.4"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }

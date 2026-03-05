@@ -1,4 +1,4 @@
-.PHONY: all build build-cli run test bench clean deps dev help rust-build rust-test rust-clean build-rust test-rust run-rust render-build build-gpu run-gpu test-gpu
+.PHONY: all build build-cli run test bench clean deps dev help rust-build rust-test rust-clean build-rust test-rust run-rust render-build build-gpu run-gpu test-gpu assets-setup meshgen validate-assets
 
 # Default target
 all: deps build
@@ -96,6 +96,42 @@ test-gpu: rust-build render-build
 	@echo "Running tests with GPU rendering..."
 	@CGO_ENABLED=1 go test -tags "rust_physics,rust_render" -v ./...
 
+# --- Asset pipeline targets ---
+
+# Set up asset directory structure from source textures
+assets-setup:
+	@echo "Setting up asset directory structure..."
+	@mkdir -p assets/textures/{sun,mercury,venus,earth,mars,jupiter,saturn,uranus,neptune,skybox}
+	@mkdir -p assets/models assets/meshes
+	@cp -n space-object-textures/8k_sun.jpg assets/textures/sun/albedo.jpg 2>/dev/null || true
+	@cp -n space-object-textures/8k_mercury.jpg assets/textures/mercury/albedo.jpg 2>/dev/null || true
+	@cp -n space-object-textures/4k_venus_atmosphere.jpg assets/textures/venus/albedo.jpg 2>/dev/null || true
+	@cp -n space-object-textures/8k_mars.jpg assets/textures/mars/albedo.jpg 2>/dev/null || true
+	@cp -n space-object-textures/8k_jupiter.jpg assets/textures/jupiter/albedo.jpg 2>/dev/null || true
+	@cp -n space-object-textures/8k_saturn.jpg assets/textures/saturn/albedo.jpg 2>/dev/null || true
+	@cp -n space-object-textures/8k_saturn_ring_alpha.png assets/textures/saturn/ring_alpha.png 2>/dev/null || true
+	@cp -n space-object-textures/2k_uranus.jpg assets/textures/uranus/albedo.jpg 2>/dev/null || true
+	@cp -n space-object-textures/2k_neptune.jpg assets/textures/neptune/albedo.jpg 2>/dev/null || true
+	@cp -n space-object-textures/8k_stars_milky_way.jpg assets/textures/skybox/milky_way.jpg 2>/dev/null || true
+	@cp -n space-object-textures/Earth_1_12756.glb assets/models/earth.glb 2>/dev/null || true
+	@echo "Asset setup complete"
+
+# Build and run mesh generator
+meshgen:
+	@echo "Building mesh generator..."
+	@mkdir -p bin assets/meshes
+	@go build -o bin/meshgen ./cmd/meshgen
+	@echo "Generating sphere meshes..."
+	@./bin/meshgen --segments 32 --output assets/meshes/sphere_32.glb
+	@./bin/meshgen --segments 64 --output assets/meshes/sphere_64.glb
+	@echo "Mesh generation complete"
+
+# Validate asset directory
+validate-assets:
+	@echo "Validating assets..."
+	@go run ./cmd/validate-assets --dir assets
+	@echo "Asset validation complete"
+
 # --- Clean ---
 
 # Clean build artifacts
@@ -145,3 +181,8 @@ help:
 	@echo "  make build-gpu    - Build GUI with Rust physics + GPU rendering"
 	@echo "  make run-gpu      - Build and run GUI with GPU rendering"
 	@echo "  make test-gpu     - Run tests with GPU rendering"
+	@echo ""
+	@echo "Asset pipeline:"
+	@echo "  make assets-setup     - Set up asset directory from source textures"
+	@echo "  make meshgen          - Generate sphere mesh .glb files"
+	@echo "  make validate-assets  - Validate asset directory structure"

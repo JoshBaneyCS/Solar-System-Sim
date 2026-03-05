@@ -7,6 +7,9 @@ typedef struct Renderer Renderer;
 
 Renderer* render_create(uint32_t width, uint32_t height);
 
+Renderer* render_create_with_textures(uint32_t width, uint32_t height,
+    const char* asset_dir);
+
 void render_set_camera(Renderer* h,
     double zoom, double pan_x, double pan_y,
     double rot_x, double rot_y, double rot_z,

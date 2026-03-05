@@ -3,6 +3,7 @@ use crate::pipeline::Pipelines;
 use crate::raytracer::{RayTracer, RTSphere, RTCameraUniform};
 use crate::shapes::{make_circle_vertices, CircleVertex, LineVertex};
 use crate::spacetime::{generate_grid, SpacetimeBody};
+use crate::textures::TextureAtlas;
 
 /// Body data passed from Go via FFI.
 pub struct BodyData {
@@ -10,6 +11,7 @@ pub struct BodyData {
     pub screen_y: f32,
     pub radius: f32,
     pub color: [f32; 4],
+    pub texture_index: i32,
 }
 
 /// Trail segment data.
@@ -33,12 +35,17 @@ pub struct Renderer {
     texture_view: wgpu::TextureView,
     readback_buffer: wgpu::Buffer,
     uniform_buffer: wgpu::Buffer,
-    bind_group: wgpu::BindGroup,
+    projection_bind_group: wgpu::BindGroup,
+    texture_bind_group: wgpu::BindGroup,
     pub width: u32,
     pub height: u32,
     format: wgpu::TextureFormat,
     pub camera: Camera,
     pixel_data: Vec<u8>,
+
+    // Texture atlas
+    texture_atlas: TextureAtlas,
+    has_real_textures: bool,
 
     // Scene data set via FFI
     pub bodies: Vec<BodyData>,
@@ -60,6 +67,10 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new(width: u32, height: u32) -> Option<Self> {
+        Self::new_with_textures(width, height, None)
+    }
+
+    pub fn new_with_textures(width: u32, height: u32, asset_dir: Option<&str>) -> Option<Self> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
@@ -98,13 +109,38 @@ impl Renderer {
         });
         queue.write_buffer(&uniform_buffer, 0, bytemuck::cast_slice(&matrix));
 
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let projection_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("projection_bind_group"),
-            layout: &pipelines.bind_group_layout,
+            layout: &pipelines.projection_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: uniform_buffer.as_entire_binding(),
             }],
+        });
+
+        // Load texture atlas
+        let (texture_atlas, has_real_textures) = if let Some(dir) = asset_dir {
+            match TextureAtlas::from_directory(&device, &queue, dir) {
+                Some(atlas) => (atlas, true),
+                None => (TextureAtlas::fallback(&device, &queue), false),
+            }
+        } else {
+            (TextureAtlas::fallback(&device, &queue), false)
+        };
+
+        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("texture_bind_group"),
+            layout: &pipelines.texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture_atlas.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&texture_atlas.sampler),
+                },
+            ],
         });
 
         let buf_size = (width * height * 4) as usize;
@@ -116,12 +152,15 @@ impl Renderer {
             texture_view,
             readback_buffer,
             uniform_buffer,
-            bind_group,
+            projection_bind_group,
+            texture_bind_group,
             width,
             height,
             format,
             camera,
             pixel_data: vec![0u8; buf_size],
+            texture_atlas,
+            has_real_textures,
             bodies: Vec::new(),
             sun: None,
             trails: Vec::new(),
@@ -227,6 +266,11 @@ impl Renderer {
         h.finish()
     }
 
+    /// Get the texture index for a body, or -1 if no real textures are loaded.
+    fn body_texture_index(&self, index: i32) -> i32 {
+        if self.has_real_textures { index } else { -1 }
+    }
+
     /// Render a frame and return a pointer to RGBA pixel data.
     pub fn render_frame(&mut self) -> &[u8] {
         if self.rt_enabled {
@@ -268,17 +312,19 @@ impl Renderer {
         if let Some(ref sun) = self.sun {
             // Glow quad (larger radius for glow effect)
             let glow_radius = sun.radius * 3.0;
-            let glow_cvs = make_circle_vertices(sun.screen_x, sun.screen_y, glow_radius, sun.color);
+            let glow_cvs = make_circle_vertices(sun.screen_x, sun.screen_y, glow_radius, sun.color, -1);
             glow_verts.extend_from_slice(&glow_cvs);
 
-            // Solid sun
-            let sun_cvs = make_circle_vertices(sun.screen_x, sun.screen_y, sun.radius, sun.color);
+            // Solid sun with texture
+            let sun_tex_idx = self.body_texture_index(sun.texture_index);
+            let sun_cvs = make_circle_vertices(sun.screen_x, sun.screen_y, sun.radius, sun.color, sun_tex_idx);
             circle_verts.extend_from_slice(&sun_cvs);
         }
 
         // Planets
         for body in &self.bodies {
-            let cvs = make_circle_vertices(body.screen_x, body.screen_y, body.radius, body.color);
+            let tex_idx = self.body_texture_index(body.texture_index);
+            let cvs = make_circle_vertices(body.screen_x, body.screen_y, body.radius, body.color, tex_idx);
             circle_verts.extend_from_slice(&cvs);
         }
 
@@ -385,11 +431,10 @@ impl Renderer {
                 occlusion_query_set: None,
             });
 
-            pass.set_bind_group(0, Some(&self.bind_group), &[]);
-
             // 1) Spacetime grid
             if let Some(ref buf) = spacetime_buf {
                 pass.set_pipeline(&self.pipelines.line);
+                pass.set_bind_group(0, Some(&self.projection_bind_group), &[]);
                 pass.set_vertex_buffer(0, buf.slice(..));
                 pass.draw(0..spacetime_verts.len() as u32, 0..1);
             }
@@ -397,6 +442,7 @@ impl Renderer {
             // 2) Trails
             if let Some(ref buf) = trail_buf {
                 pass.set_pipeline(&self.pipelines.line);
+                pass.set_bind_group(0, Some(&self.projection_bind_group), &[]);
                 pass.set_vertex_buffer(0, buf.slice(..));
                 pass.draw(0..trail_verts.len() as u32, 0..1);
             }
@@ -404,13 +450,16 @@ impl Renderer {
             // 3) Sun glow (additive blend)
             if let Some(ref buf) = glow_buf {
                 pass.set_pipeline(&self.pipelines.glow);
+                pass.set_bind_group(0, Some(&self.projection_bind_group), &[]);
                 pass.set_vertex_buffer(0, buf.slice(..));
                 pass.draw(0..glow_verts.len() as u32, 0..1);
             }
 
-            // 4) Circles (sun solid + planets)
+            // 4) Circles (sun solid + planets) with texture sampling
             if let Some(ref buf) = circle_buf {
                 pass.set_pipeline(&self.pipelines.circle);
+                pass.set_bind_group(0, Some(&self.projection_bind_group), &[]);
+                pass.set_bind_group(1, Some(&self.texture_bind_group), &[]);
                 pass.set_vertex_buffer(0, buf.slice(..));
                 pass.draw(0..circle_verts.len() as u32, 0..1);
             }
@@ -418,6 +467,7 @@ impl Renderer {
             // 5) Distance measurement line
             if let Some(ref buf) = dist_buf {
                 pass.set_pipeline(&self.pipelines.line);
+                pass.set_bind_group(0, Some(&self.projection_bind_group), &[]);
                 pass.set_vertex_buffer(0, buf.slice(..));
                 pass.draw(0..dist_line_verts.len() as u32, 0..1);
             }
@@ -502,7 +552,8 @@ impl Renderer {
                 radius: sun.radius,
                 color: sun.color,
                 material: 1, // emissive
-                _pad: [0; 3],
+                texture_index: if self.has_real_textures { sun.texture_index } else { -1 },
+                _pad: [0; 2],
             });
         }
         for body in &self.bodies {
@@ -511,7 +562,8 @@ impl Renderer {
                 radius: body.radius,
                 color: body.color,
                 material: 0, // diffuse
-                _pad: [0; 3],
+                texture_index: if self.has_real_textures { body.texture_index } else { -1 },
+                _pad: [0; 2],
             });
         }
 
@@ -538,8 +590,11 @@ impl Renderer {
             label: Some("rt_encoder"),
         });
 
-        // Dispatch RT compute shader
-        rt.dispatch(&self.device, &self.queue, &mut encoder, &spheres, &camera_uniform);
+        // Dispatch RT compute shader with texture atlas
+        rt.dispatch(
+            &self.device, &self.queue, &mut encoder, &spheres, &camera_uniform,
+            &self.texture_atlas.view, &self.texture_atlas.sampler,
+        );
 
         // Copy RT output -> main render texture
         encoder.copy_texture_to_texture(
@@ -647,7 +702,7 @@ impl Renderer {
                 occlusion_query_set: None,
             });
 
-            pass.set_bind_group(0, Some(&self.bind_group), &[]);
+            pass.set_bind_group(0, Some(&self.projection_bind_group), &[]);
 
             if let Some(ref buf) = spacetime_buf {
                 pass.set_pipeline(&self.pipelines.line);
