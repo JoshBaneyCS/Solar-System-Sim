@@ -19,11 +19,11 @@ const (
 
 // ViewPort handles camera/view transformation
 type ViewPort struct {
-	Zoom          float64 // Zoom level multiplier (1.0 = default)
-	PanX, PanY    float64 // Pan offset in AU
-	CanvasWidth   float64
-	CanvasHeight  float64
-	FollowBody    *physics.Body // If not nil, center camera on this body
+	Zoom         float64 // Zoom level multiplier (1.0 = default)
+	PanX, PanY   float64 // Pan offset in AU
+	CanvasWidth  float64
+	CanvasHeight float64
+	FollowBody   *physics.Body // If not nil, center camera on this body
 
 	// 3D support
 	RotationX float64 // Pitch (rotation around X-axis)

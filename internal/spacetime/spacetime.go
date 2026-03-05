@@ -38,7 +38,7 @@ type SpacetimeCache struct {
 const (
 	defaultGridResolution      = 80
 	displacementFactor         = 50.0
-	maxInfluenceDistance        = 10.0 * constants.AU
+	maxInfluenceDistance       = 10.0 * constants.AU
 	cacheInvalidationThreshold = 0.05
 	minGridResolution          = 40
 	maxGridResolution          = 120

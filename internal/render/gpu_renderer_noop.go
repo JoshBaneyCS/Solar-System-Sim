@@ -19,9 +19,9 @@ func NewGPURenderer(_ *physics.Simulator, _ *viewport.ViewPort, _ *Renderer, _, 
 	return nil
 }
 
-func (g *GPURenderer) Raster() *canvas.Raster                { return nil }
-func (g *GPURenderer) Resize(_, _ uint32)                     {}
-func (g *GPURenderer) Refresh()                               {}
-func (g *GPURenderer) Free()                                  {}
-func (g *GPURenderer) SetRTMode(_ bool)                        {}
-func (g *GPURenderer) CreateLabelOverlay() *fyne.Container    { return container.NewWithoutLayout() }
+func (g *GPURenderer) Raster() *canvas.Raster              { return nil }
+func (g *GPURenderer) Resize(_, _ uint32)                  {}
+func (g *GPURenderer) Refresh()                            {}
+func (g *GPURenderer) Free()                               {}
+func (g *GPURenderer) SetRTMode(_ bool)                    {}
+func (g *GPURenderer) CreateLabelOverlay() *fyne.Container { return container.NewWithoutLayout() }

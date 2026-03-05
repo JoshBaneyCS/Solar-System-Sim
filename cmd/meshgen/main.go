@@ -263,8 +263,8 @@ func buildGLB(positions, normals, uvs []float32, indices []uint16) ([]byte, erro
 	var out bytes.Buffer
 	// GLB header
 	out.Write([]byte("glTF"))
-	binary.Write(&out, binary.LittleEndian, uint32(2))         // version
-	binary.Write(&out, binary.LittleEndian, uint32(totalLen))   // total length
+	binary.Write(&out, binary.LittleEndian, uint32(2))        // version
+	binary.Write(&out, binary.LittleEndian, uint32(totalLen)) // total length
 
 	// JSON chunk
 	binary.Write(&out, binary.LittleEndian, uint32(len(jsonData)))

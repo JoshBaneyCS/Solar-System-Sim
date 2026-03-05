@@ -18,14 +18,14 @@ type DeltaVBudget struct {
 
 // LaunchPlan is the result of a launch simulation.
 type LaunchPlan struct {
-	Vehicle        Vehicle
-	Destination    Destination
-	Budget         DeltaVBudget
-	TransferTime   float64 // seconds
-	ParkingOrbitV  float64 // parking orbit velocity (m/s)
+	Vehicle         Vehicle
+	Destination     Destination
+	Budget          DeltaVBudget
+	TransferTime    float64 // seconds
+	ParkingOrbitV   float64 // parking orbit velocity (m/s)
 	ParkingAltitude float64 // parking orbit altitude (m)
-	VehicleDeltaV  float64 // total vehicle dv capability (m/s)
-	Feasible       bool    // vehicle has enough dv
+	VehicleDeltaV   float64 // total vehicle dv capability (m/s)
+	Feasible        bool    // vehicle has enough dv
 }
 
 // Planner computes launch plans for given vehicle/destination pairs.

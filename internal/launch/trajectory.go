@@ -4,7 +4,7 @@ import "solar-system-sim/internal/math3d"
 
 // TrajectoryPoint represents a single point along a trajectory.
 type TrajectoryPoint struct {
-	Time     float64    // seconds since launch
+	Time     float64     // seconds since launch
 	Position math3d.Vec3 // meters
 	Velocity math3d.Vec3 // m/s
 }

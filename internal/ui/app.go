@@ -21,17 +21,17 @@ import (
 
 // App is the main application
 type App struct {
-	fyneApp      fyne.App
-	window       fyne.Window
-	simulator    *physics.Simulator
-	viewport     *viewport.ViewPort
-	renderer     *render.Renderer
-	canvas       *fyne.Container
-	gpuRenderer  *render.GPURenderer
-	useGPU       bool
-	launch       *launchState
-	showLabels   bool
-	settings     Settings
+	fyneApp     fyne.App
+	window      fyne.Window
+	simulator   *physics.Simulator
+	viewport    *viewport.ViewPort
+	renderer    *render.Renderer
+	canvas      *fyne.Container
+	gpuRenderer *render.GPURenderer
+	useGPU      bool
+	launch      *launchState
+	showLabels  bool
+	settings    Settings
 }
 
 func NewApp() *App {

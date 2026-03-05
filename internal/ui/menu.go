@@ -132,4 +132,3 @@ func (a *App) buildMainMenu() *fyne.MainMenu {
 
 	return fyne.NewMainMenu(fileMenu, viewMenu, simMenu, settingsMenu, aboutMenu)
 }
-

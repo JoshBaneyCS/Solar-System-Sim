@@ -9,7 +9,8 @@ import (
 // to the acceleration of a body orbiting the Sun.
 //
 // Standard 1PN expression for a test particle in a Schwarzschild field:
-//   a_GR = (GM/(c²r³)) * [(4GM/r - v²)r + 4(r·v)v]
+//
+//	a_GR = (GM/(c²r³)) * [(4GM/r - v²)r + 4(r·v)v]
 //
 // This produces Mercury's perihelion precession of ~43 arcsec/century.
 func CalculateGRCorrection(bodyPos, bodyVel math3d.Vec3, sunMass, distanceToSun float64) math3d.Vec3 {

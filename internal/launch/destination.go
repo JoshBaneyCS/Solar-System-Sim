@@ -13,10 +13,10 @@ const (
 // Destination represents a target orbit for a launch.
 type Destination struct {
 	Name          string
-	Altitude      float64        // meters above Earth surface (Earth-centered)
-	ApoapsisAlt   float64        // meters above Earth surface (for elliptical)
-	SemiMajorAxis float64        // meters (heliocentric)
-	Inclination   float64        // radians
+	Altitude      float64 // meters above Earth surface (Earth-centered)
+	ApoapsisAlt   float64 // meters above Earth surface (for elliptical)
+	SemiMajorAxis float64 // meters (heliocentric)
+	Inclination   float64 // radians
 	Eccentricity  float64
 	Frame         ReferenceFrame
 }
