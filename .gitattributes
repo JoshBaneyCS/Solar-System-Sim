@@ -1,0 +1,18 @@
+# Mark generated/vendored files so GitHub Linguist ignores them in language stats
+
+# Build artifacts
+bin/** linguist-generated
+crates/*/target/** linguist-generated
+
+# Asset files (textures, models, meshes)
+assets/textures/** linguist-generated
+assets/models/** linguist-generated
+assets/meshes/** linguist-generated
+space-object-textures/** linguist-generated
+
+# Rust lock files
+Cargo.lock linguist-generated
+crates/*/Cargo.lock linguist-generated
+
+# IDE files
+.idea/** linguist-generated

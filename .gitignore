@@ -1,0 +1,29 @@
+# Build artifacts
+bin/
+*.exe
+*.dylib
+*.so
+*.dll
+
+# Rust build artifacts
+crates/*/target/
+
+# Go
+*.test
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# Temporary files
+*.tmp
+*.log
