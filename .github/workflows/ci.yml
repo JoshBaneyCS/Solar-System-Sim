@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            test-all: true
+          - os: macos-latest
+            test-all: true
+          - os: windows-latest
+            test-all: false  # Skip GUI-dependent packages on Windows
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod tidy
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          UNFORMATTED=$(gofmt -l .)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "Files need gofmt:"
+            echo "$UNFORMATTED"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test (all packages)
+        if: matrix.test-all
+        run: go test -v ./...
+
+      - name: Test (non-GUI packages)
+        if: "!matrix.test-all"
+        run: |
+          go test -v ./internal/math3d/... ./internal/physics/... ./internal/launch/... ./internal/validation/... ./pkg/...
+
+      - name: Build
+        if: matrix.test-all
+        run: go build ./...

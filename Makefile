@@ -1,4 +1,4 @@
-.PHONY: all build build-cli build-solar-sim build-solar-sim-headless run test bench clean deps dev help lint vet rust-build rust-test rust-clean build-rust test-rust run-rust render-build build-gpu run-gpu test-gpu assets-setup meshgen validate-assets
+.PHONY: all build build-cli build-solar-sim build-solar-sim-headless run test bench clean deps dev help lint vet package-macos package-linux package-windows rust-build rust-test rust-clean build-rust test-rust run-rust render-build build-gpu run-gpu test-gpu assets-setup meshgen validate-assets
 
 # Default target
 all: deps build
@@ -177,6 +177,20 @@ lint:
 	@if [ -d crates/render_core ]; then echo "Running clippy (render_core)..." && cd crates/render_core && cargo clippy 2>/dev/null; fi
 	@echo "Lint passed."
 
+# --- Packaging targets ---
+
+# Package macOS .dmg (requires bin/solar-sim and bin/solar-sim-headless)
+package-macos:
+	@bash packaging/package-macos.sh
+
+# Package Linux .tar.gz (requires bin/solar-sim and bin/solar-sim-headless)
+package-linux:
+	@bash packaging/package-linux.sh
+
+# Package Windows .zip (requires bin/solar-sim.exe and bin/solar-sim-headless.exe)
+package-windows:
+	@bash packaging/package-windows.sh
+
 # Help
 help:
 	@echo "Solar System Simulator - Makefile targets:"
@@ -208,6 +222,11 @@ help:
 	@echo "  make build-gpu    - Build GUI with Rust physics + GPU rendering"
 	@echo "  make run-gpu      - Build and run GUI with GPU rendering"
 	@echo "  make test-gpu     - Run tests with GPU rendering"
+	@echo ""
+	@echo "Packaging:"
+	@echo "  make package-macos   - Create macOS .dmg (after building)"
+	@echo "  make package-linux   - Create Linux .tar.gz (after building)"
+	@echo "  make package-windows - Create Windows .zip (after building)"
 	@echo ""
 	@echo "Asset pipeline:"
 	@echo "  make assets-setup     - Set up asset directory from source textures"

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Solar System Simulator
+Comment=N-body solar system physics simulator
+Exec=solar-sim gui
+Icon=solar-sim
+Terminal=false
+Categories=Science;Education;
