@@ -38,4 +38,10 @@ const (
 
 	// EarthOrbitSMA is Earth semi-major axis (m)
 	EarthOrbitSMA = 1.496e11
+
+	// MuMoon is the standard gravitational parameter of the Moon (m^3/s^2)
+	MuMoon = 4.9048695e12
+
+	// RMoon is the mean radius of the Moon (m)
+	RMoon = 1.7371e6
 )

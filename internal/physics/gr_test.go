@@ -31,7 +31,14 @@ func TestGRCorrectionNonZeroForMercury(t *testing.T) {
 
 	t.Logf("GR correction magnitude: %e m/s²", grCorrection.Magnitude())
 	t.Logf("Newtonian acceleration:  %e m/s²", accelNewton.Magnitude())
-	t.Logf("GR/Newtonian ratio: %e", grCorrection.Magnitude()/accelNewton.Magnitude())
+
+	ratio := grCorrection.Magnitude() / accelNewton.Magnitude()
+	t.Logf("GR/Newtonian ratio: %e", ratio)
+
+	// 1PN correction for Mercury should be ~1e-7 of Newtonian
+	if ratio > 1e-5 || ratio < 1e-10 {
+		t.Errorf("GR/Newtonian ratio %e out of expected range [1e-10, 1e-5]", ratio)
+	}
 }
 
 func TestGRCorrectionZeroForOtherPlanets(t *testing.T) {
@@ -70,11 +77,14 @@ func TestGRCorrectionFormula(t *testing.T) {
 
 	distSun := pos.Magnitude()
 	c := constants.C
+	GM := constants.G * sim.SunMass
 
-	LVec := pos.Cross(vel)
-	LMag := LVec.Magnitude()
-	grAccel := LVec.Cross(pos).Mul(3 * constants.G * constants.G * sim.SunMass * sim.SunMass /
-		(c * c * distSun * distSun * distSun * LMag))
+	// Compute expected 1PN correction manually:
+	// a_GR = GM/(c²r³) * [(4GM/r - v²)r + 4(r·v)v]
+	v2 := vel.Dot(vel)
+	rdotv := pos.Dot(vel)
+	coeff := GM / (c * c * distSun * distSun * distSun)
+	grAccel := pos.Mul(4*GM/distSun - v2).Add(vel.Mul(4 * rdotv)).Mul(coeff)
 
 	states := make([]BodyState, len(sim.Planets))
 	for i, p := range sim.Planets {
@@ -92,7 +102,6 @@ func TestGRCorrectionFormula(t *testing.T) {
 
 	assertRelativeError(t, codeGR.X, grAccel.X, 1e-8, "GR X component")
 	assertRelativeError(t, codeGR.Y, grAccel.Y, 1e-8, "GR Y component")
-
 	assertFloat64Near(t, codeGR.Z, grAccel.Z, grAccel.Magnitude()*1e-8, "GR Z component")
 
 	t.Logf("GR correction magnitude: %e m/s²", grAccel.Magnitude())
@@ -121,6 +130,8 @@ func TestGRCorrectionPerpendicular(t *testing.T) {
 
 	grCorrection := accelGR.Sub(accelNewton)
 
+	// 1PN correction lies in the orbital plane (spanned by r and v),
+	// so it should be perpendicular to the angular momentum vector L = r × v
 	L := pos.Cross(vel)
 	dot := grCorrection.Dot(L)
 	if math.Abs(dot) > grCorrection.Magnitude()*L.Magnitude()*1e-8 {

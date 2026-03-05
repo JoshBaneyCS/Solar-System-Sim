@@ -102,14 +102,16 @@ func (p *Planner) planElliptical(plan *LaunchPlan, rPark float64) {
 
 // planLunar computes dv for a trans-lunar injection.
 func (p *Planner) planLunar(plan *LaunchPlan, rPark float64) {
-	// Simplified: TLI as hyperbolic excess to reach Moon distance
-	// v_inf at Moon distance is approximated from energy conservation
+	// TLI as Hohmann transfer to Moon distance
 	rMoon := REarth + plan.Destination.ApoapsisAlt
-	dv1, _ := HohmannDeltaV(MuEarth, rPark, rMoon)
+	dv1, dv2 := HohmannDeltaV(MuEarth, rPark, rMoon)
 	plan.Budget.Transfer = dv1
 
-	// Lunar orbit insertion (simplified: ~800 m/s to capture into 100km lunar orbit)
-	plan.Budget.Arrival = 800.0
+	// Lunar orbit insertion: compute capture burn from hyperbolic excess
+	// The arrival excess velocity relative to Moon is approximately dv2
+	// Capture into 100km lunar orbit
+	rLunarOrbit := RMoon + 100e3
+	plan.Budget.Arrival = HyperbolicExcessDV(MuMoon, rLunarOrbit, dv2)
 
 	plan.TransferTime = HohmannTransferTime(MuEarth, rPark, rMoon)
 }

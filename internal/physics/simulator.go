@@ -24,6 +24,8 @@ type Simulator struct {
 	maxTrailLen          int
 	PlanetGravityEnabled bool
 	RelativisticEffects  bool
+	Integrator           IntegratorType
+	SofteningLength      float64
 	Backend              PhysicsBackend
 	mu                   sync.RWMutex
 }
@@ -98,9 +100,10 @@ func (s *Simulator) CreatePlanetFromElements(p Planet) Body {
 
 	GM := constants.G * s.SunMass
 	h := math.Sqrt(GM * a * (1 - e*e))
+	muOverH := GM / h
 
-	vxOrb := -h * math.Sin(nu) / r
-	vyOrb := h * (e + math.Cos(nu)) / r
+	vxOrb := -muOverH * math.Sin(nu)
+	vyOrb := muOverH * (e + math.Cos(nu))
 
 	vx1 := vxOrb*math.Cos(omega) - vyOrb*math.Sin(omega)
 	vy1 := vxOrb*math.Sin(omega) + vyOrb*math.Cos(omega)
@@ -140,7 +143,7 @@ func (s *Simulator) CalculateAccelerationWithSnapshot(
 
 	if distanceSun > 1e6 {
 		rHatSun := rSun.Normalize()
-		accelMagSun := constants.G * s.SunMass / (distanceSun * distanceSun)
+		accelMagSun := constants.G * s.SunMass / (distanceSun*distanceSun + s.SofteningLength*s.SofteningLength)
 		accelSun := rHatSun.Mul(accelMagSun)
 
 		if s.RelativisticEffects && bodyName == "Mercury" {
@@ -165,7 +168,7 @@ func (s *Simulator) CalculateAccelerationWithSnapshot(
 
 			if distancePlanet > 1e6 {
 				rHatPlanet := rPlanet.Normalize()
-				accelMagPlanet := constants.G * otherMass / (distancePlanet * distancePlanet)
+				accelMagPlanet := constants.G * otherMass / (distancePlanet*distancePlanet + s.SofteningLength*s.SofteningLength)
 				accelPlanet := rHatPlanet.Mul(accelMagPlanet)
 				totalAccel = totalAccel.Add(accelPlanet)
 			}
@@ -192,6 +195,11 @@ func (s *Simulator) Step(dt float64) {
 			}
 		}
 		s.CurrentTime += dt
+		return
+	}
+
+	if s.Integrator == IntegratorVerlet {
+		s.stepVerlet(dt)
 		return
 	}
 

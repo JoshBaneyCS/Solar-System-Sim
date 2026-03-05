@@ -79,11 +79,11 @@ func TestVelocityFormula(t *testing.T) {
 			e := pData.Eccentricity
 			nu := pData.InitialAnomaly
 
-			r := a * (1 - e*e) / (1 + e*math.Cos(nu))
 			h := math.Sqrt(GM * a * (1 - e*e))
 
-			expectedVxOrb := -h * math.Sin(nu) / r
-			expectedVyOrb := h * (e + math.Cos(nu)) / r
+			muOverH := GM / h
+			expectedVxOrb := -muOverH * math.Sin(nu)
+			expectedVyOrb := muOverH * (e + math.Cos(nu))
 
 			body := sim.CreatePlanetFromElements(pData)
 
