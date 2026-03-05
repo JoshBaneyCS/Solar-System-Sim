@@ -1,4 +1,4 @@
-.PHONY: all build build-cli run test bench clean deps dev help rust-build rust-test rust-clean build-rust test-rust run-rust render-build build-gpu run-gpu test-gpu assets-setup meshgen validate-assets
+.PHONY: all build build-cli build-solar-sim build-solar-sim-headless run test bench clean deps dev help rust-build rust-test rust-clean build-rust test-rust run-rust render-build build-gpu run-gpu test-gpu assets-setup meshgen validate-assets
 
 # Default target
 all: deps build
@@ -21,6 +21,20 @@ build-cli: deps
 	@mkdir -p bin
 	@go build -o bin/solar-system-cli ./cmd/cli
 	@echo "Build complete: bin/solar-system-cli"
+
+# Build the unified CLI (with GUI support)
+build-solar-sim: deps
+	@echo "Building Solar System Simulator (unified CLI)..."
+	@mkdir -p bin
+	@go build -o bin/solar-sim ./cmd/solar-sim
+	@echo "Build complete: bin/solar-sim"
+
+# Build the unified CLI without GUI (headless only, no graphics deps)
+build-solar-sim-headless: deps
+	@echo "Building Solar System Simulator (headless CLI)..."
+	@mkdir -p bin
+	@go build -tags nogui -o bin/solar-sim ./cmd/solar-sim
+	@echo "Build complete: bin/solar-sim (headless, no GUI deps)"
 
 # Run the GUI application
 run: build
@@ -160,6 +174,8 @@ help:
 	@echo "  make           - Download deps and build GUI"
 	@echo "  make build     - Build the GUI application"
 	@echo "  make build-cli - Build the CLI application"
+	@echo "  make build-solar-sim          - Build unified CLI (with GUI)"
+	@echo "  make build-solar-sim-headless - Build unified CLI (headless, no GUI deps)"
 	@echo "  make run       - Build and run the GUI"
 	@echo "  make test      - Run all tests"
 	@echo "  make bench     - Run benchmarks"
