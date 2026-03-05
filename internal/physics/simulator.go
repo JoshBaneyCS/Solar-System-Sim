@@ -24,6 +24,7 @@ type Simulator struct {
 	maxTrailLen          int
 	PlanetGravityEnabled bool
 	RelativisticEffects  bool
+	Backend              PhysicsBackend
 	mu                   sync.RWMutex
 }
 
@@ -64,6 +65,8 @@ func NewSimulator() *Simulator {
 	for _, pData := range PlanetData {
 		sim.Planets = append(sim.Planets, sim.CreatePlanetFromElements(pData))
 	}
+
+	initBackend(sim)
 
 	return sim
 }
@@ -173,6 +176,25 @@ func (s *Simulator) CalculateAccelerationWithSnapshot(
 }
 
 func (s *Simulator) Step(dt float64) {
+	if s.Backend != nil {
+		s.syncBackendConfig()
+		s.Backend.Step(dt)
+		pos, vel := s.Backend.GetState()
+		for i := range s.Planets {
+			s.Planets[i].Position = pos[i]
+			s.Planets[i].Velocity = vel[i]
+
+			if s.ShowTrails {
+				s.Planets[i].Trail = append(s.Planets[i].Trail, s.Planets[i].Position)
+				if len(s.Planets[i].Trail) > s.maxTrailLen {
+					s.Planets[i].Trail = s.Planets[i].Trail[1:]
+				}
+			}
+		}
+		s.CurrentTime += dt
+		return
+	}
+
 	n := len(s.Planets)
 
 	pos0 := make([]math3d.Vec3, n)
@@ -270,6 +292,14 @@ func (s *Simulator) Update(dt float64) {
 
 func (s *Simulator) SetSunMass(massMultiplier float64) {
 	s.SunMass = s.DefaultMass * massMultiplier
+	s.syncBackendConfig()
+}
+
+// syncBackendConfig pushes current config to the Rust backend if present.
+func (s *Simulator) syncBackendConfig() {
+	if s.Backend != nil {
+		s.Backend.SetConfig(s.SunMass, s.PlanetGravityEnabled, s.RelativisticEffects)
+	}
 }
 
 func (s *Simulator) ClearTrails() {
