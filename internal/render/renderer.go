@@ -8,6 +8,8 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 
+	"solar-system-sim/internal/launch"
+	"solar-system-sim/internal/math3d"
 	"solar-system-sim/internal/physics"
 	"solar-system-sim/internal/spacetime"
 	"solar-system-sim/internal/viewport"
@@ -23,6 +25,10 @@ type Renderer struct {
 
 	// Distance measurement
 	SelectedBodies []*physics.Body
+
+	// Launch trajectory overlay
+	LaunchTrajectory *launch.Trajectory
+	LaunchEarthPos   math3d.Vec3
 }
 
 func NewRenderer(sim *physics.Simulator, vp *viewport.ViewPort) *Renderer {
@@ -127,6 +133,11 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 		}
 	}
 
+	// Render launch trajectory
+	if r.LaunchTrajectory != nil && len(r.LaunchTrajectory.Points) > 1 {
+		objects = append(objects, r.renderTrajectory(canvasWidth, canvasHeight)...)
+	}
+
 	if len(r.SelectedBodies) == 2 {
 		pos1 := r.SelectedBodies[0].Position
 		pos2 := r.SelectedBodies[1].Position
@@ -157,6 +168,60 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 	}
 
 	return container.NewWithoutLayout(objects...)
+}
+
+// renderTrajectory draws the launch trajectory as colored line segments.
+func (r *Renderer) renderTrajectory(canvasWidth, canvasHeight float64) []fyne.CanvasObject {
+	traj := r.LaunchTrajectory
+	if traj == nil || len(traj.Points) < 2 {
+		return nil
+	}
+
+	var objects []fyne.CanvasObject
+
+	// Convert Earth-centered trajectory to heliocentric for rendering
+	points := traj.Points
+	isEarthCentered := traj.Frame == launch.EarthCentered
+
+	step := 1
+	if len(points) > 500 {
+		step = len(points) / 500
+	}
+
+	trajectoryColor := color.RGBA{0, 255, 128, 200} // green
+
+	for j := 0; j < len(points)-step; j += step {
+		p1 := points[j].Position
+		p2 := points[j+step].Position
+
+		if isEarthCentered {
+			p1 = p1.Add(r.LaunchEarthPos)
+			p2 = p2.Add(r.LaunchEarthPos)
+		}
+
+		x1, y1 := r.Viewport.WorldToScreen(p1)
+		x2, y2 := r.Viewport.WorldToScreen(p2)
+
+		if r.isOnScreen(x1, y1, canvasWidth, canvasHeight) ||
+			r.isOnScreen(x2, y2, canvasWidth, canvasHeight) {
+			// Color gradient: green at start -> orange at end
+			progress := float64(j) / float64(len(points))
+			c := color.RGBA{
+				R: uint8(progress * 255),
+				G: uint8((1 - progress*0.5) * 255),
+				B: uint8((1 - progress) * 128),
+				A: trajectoryColor.A,
+			}
+
+			line := r.Cache.GetLine(c)
+			line.Position1 = fyne.NewPos(x1, y1)
+			line.Position2 = fyne.NewPos(x2, y2)
+			line.StrokeWidth = 2
+			objects = append(objects, line)
+		}
+	}
+
+	return objects
 }
 
 // CreateLabelOverlay returns only text labels as a container (for GPU render mode overlay).

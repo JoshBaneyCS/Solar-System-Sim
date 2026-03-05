@@ -29,6 +29,7 @@ type App struct {
 	canvas       *fyne.Container
 	gpuRenderer  *render.GPURenderer
 	useGPU       bool
+	launch       *launchState
 }
 
 func NewApp() *App {
@@ -45,6 +46,7 @@ func NewApp() *App {
 		simulator: sim,
 		viewport:  vp,
 		renderer:  r,
+		launch:    newLaunchState(),
 	}
 }
 
@@ -415,7 +417,16 @@ func (a *App) Run() {
 
 	leftScroll := container.NewScroll(controls)
 	leftScroll.SetMinSize(fyne.NewSize(280, 600))
-	leftPanel := leftScroll
+
+	launchPanel := a.createLaunchPanel()
+	launchScroll := container.NewScroll(launchPanel)
+	launchScroll.SetMinSize(fyne.NewSize(280, 600))
+
+	simTab := container.NewTabItem("Simulation", leftScroll)
+	launchTab := container.NewTabItem("Launch Planner", launchScroll)
+	leftTabs := container.NewAppTabs(simTab, launchTab)
+	leftTabs.SetTabLocation(container.TabLocationTop)
+	leftPanel := leftTabs
 
 	mainContent := container.NewHSplit(
 		canvasContainer,
@@ -475,6 +486,16 @@ func (a *App) Run() {
 		ticker := time.NewTicker(16 * time.Millisecond)
 		for range ticker.C {
 			a.simulator.Update(constants.BaseTimeStep)
+
+			// Update launch trajectory on renderer
+			a.renderer.LaunchTrajectory = a.launch.GetTrajectory()
+			if a.renderer.LaunchTrajectory != nil {
+				planets := a.simulator.GetPlanetSnapshot()
+				if len(planets) > 2 {
+					a.renderer.LaunchEarthPos = planets[2].Position
+				}
+			}
+
 			if a.useGPU && a.gpuRenderer != nil {
 				// GPU render path: raster + text label overlay
 				labels := a.gpuRenderer.CreateLabelOverlay()

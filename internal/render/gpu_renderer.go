@@ -12,6 +12,8 @@ import (
 	"fyne.io/fyne/v2/canvas"
 
 	"solar-system-sim/internal/ffi"
+	"solar-system-sim/internal/launch"
+	"solar-system-sim/internal/math3d"
 	"solar-system-sim/internal/physics"
 	"solar-system-sim/internal/viewport"
 )
@@ -182,30 +184,65 @@ func (g *GPURenderer) generateImage(w, h int) image.Image {
 		g.rust.SetBodies(uint32(n), positions, colors, radii, sunPos, sunColor, sun.Radius)
 	}
 
-	// Set trails
-	if showTrails {
-		trailLengths := make([]uint32, n)
+	// Set trails (including launch trajectory as extra trail)
+	launchTraj := g.renderer.LaunchTrajectory
+	var earthPos math3d.Vec3
+	if launchTraj != nil && len(planets) > 2 {
+		earthPos = planets[2].Position
+	}
+
+	if showTrails || launchTraj != nil {
+		trailCount := n
+		if launchTraj != nil && len(launchTraj.Points) > 1 {
+			trailCount++
+		}
+
+		trailLengths := make([]uint32, trailCount)
 		var trailPositions []float64
-		trailColors := make([]float64, n*4)
+		trailColors := make([]float64, trailCount*4)
 
-		for i, p := range planets {
-			trailLengths[i] = uint32(len(p.Trail))
+		if showTrails {
+			for i, p := range planets {
+				trailLengths[i] = uint32(len(p.Trail))
 
-			for _, tp := range p.Trail {
-				trailPositions = append(trailPositions, tp.X, tp.Y, tp.Z)
+				for _, tp := range p.Trail {
+					trailPositions = append(trailPositions, tp.X, tp.Y, tp.Z)
+				}
+
+				c := colorToFloat64(p.Color)
+				trailColors[i*4] = c[0]
+				trailColors[i*4+1] = c[1]
+				trailColors[i*4+2] = c[2]
+				trailColors[i*4+3] = c[3]
 			}
+		} else {
+			for i := 0; i < n; i++ {
+				trailLengths[i] = 0
+			}
+		}
 
-			c := colorToFloat64(p.Color)
-			trailColors[i*4] = c[0]
-			trailColors[i*4+1] = c[1]
-			trailColors[i*4+2] = c[2]
-			trailColors[i*4+3] = c[3]
+		// Add launch trajectory as the last trail
+		if launchTraj != nil && len(launchTraj.Points) > 1 {
+			idx := n
+			trailLengths[idx] = uint32(len(launchTraj.Points))
+			for _, pt := range launchTraj.Points {
+				pos := pt.Position
+				if launchTraj.Frame == launch.EarthCentered {
+					pos = pos.Add(earthPos)
+				}
+				trailPositions = append(trailPositions, pos.X, pos.Y, pos.Z)
+			}
+			// Green color for trajectory
+			trailColors[idx*4] = 0.0
+			trailColors[idx*4+1] = 1.0
+			trailColors[idx*4+2] = 0.5
+			trailColors[idx*4+3] = 0.8
 		}
 
 		if len(trailPositions) > 0 {
-			g.rust.SetTrails(uint32(n), trailLengths, trailPositions, trailColors, true)
+			g.rust.SetTrails(uint32(trailCount), trailLengths, trailPositions, trailColors, true)
 		} else {
-			g.rust.SetTrails(uint32(n), nil, nil, nil, false)
+			g.rust.SetTrails(uint32(trailCount), nil, nil, nil, false)
 		}
 	} else {
 		g.rust.SetTrails(0, nil, nil, nil, false)
