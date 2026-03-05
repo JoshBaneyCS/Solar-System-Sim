@@ -12,9 +12,10 @@
 
 ## Project Author
 - Joshua Baney
+= https://github.com/JoshBaneyCS/
 
 ## Donations
-- (Add links here)
+- [My Personal PayPal](https://www.paypal.com/donate/?business=HWM2DENMWG4K2&no_recurring=0&item_name=TO+continue+funding+ongoing+development+to+Solar+System+Simulator+-+An+open+source+Physics+application&currency_code=USD)
 
 ## Attribution for Art Assets
 - Each texture/model/background must have:

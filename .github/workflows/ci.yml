@@ -43,6 +43,7 @@ jobs:
         run: go mod tidy
 
       - name: Check formatting
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           UNFORMATTED=$(gofmt -l .)
