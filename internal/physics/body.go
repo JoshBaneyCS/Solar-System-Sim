@@ -8,13 +8,14 @@ import (
 
 // Body represents a celestial body
 type Body struct {
-	Name     string
-	Mass     float64 // kg
-	Position math3d.Vec3
-	Velocity math3d.Vec3
-	Color    color.Color
-	Radius   float64 // display radius in pixels
-	Trail    []math3d.Vec3
+	Name      string
+	Mass      float64 // kg
+	Position  math3d.Vec3
+	Velocity  math3d.Vec3
+	Color     color.Color
+	Radius    float64 // display radius in pixels
+	Trail     []math3d.Vec3
+	ShowTrail bool
 }
 
 // Planet holds real solar system data

@@ -56,7 +56,7 @@ func (s *Simulator) stepVerlet(dt float64) {
 		// Step 4: Complete the velocity step
 		s.Planets[i].Velocity = halfVel[i].Add(newAccel.Mul(dt / 2))
 
-		if s.ShowTrails {
+		if s.ShowTrails && s.Planets[i].ShowTrail {
 			s.Planets[i].Trail = append(s.Planets[i].Trail, s.Planets[i].Position)
 			if len(s.Planets[i].Trail) > s.maxTrailLen {
 				s.Planets[i].Trail = s.Planets[i].Trail[1:]

@@ -30,24 +30,32 @@ type App struct {
 	gpuRenderer  *render.GPURenderer
 	useGPU       bool
 	launch       *launchState
+	showLabels   bool
+	settings     Settings
 }
 
 func NewApp() *App {
-	fyneApp := app.New()
+	fyneApp := app.NewWithID("com.joshbaney.solar-sim")
 	window := fyneApp.NewWindow("Solar System Simulator")
 
 	sim := physics.NewSimulator()
 	vp := viewport.NewViewPort()
 	r := render.NewRenderer(sim, vp)
 
-	return &App{
-		fyneApp:   fyneApp,
-		window:    window,
-		simulator: sim,
-		viewport:  vp,
-		renderer:  r,
-		launch:    newLaunchState(),
+	a := &App{
+		fyneApp:    fyneApp,
+		window:     window,
+		simulator:  sim,
+		viewport:   vp,
+		renderer:   r,
+		launch:     newLaunchState(),
+		showLabels: true,
 	}
+
+	a.settings = LoadSettings(fyneApp.Preferences())
+	a.applySettings(a.settings)
+
+	return a
 }
 
 func (a *App) createPhysicsPanel() *fyne.Container {
@@ -435,9 +443,12 @@ func (a *App) Run() {
 	launchScroll := container.NewScroll(launchPanel)
 	launchScroll.SetMinSize(fyne.NewSize(280, 600))
 
+	bodiesPanel := a.createBodiesPanel()
+
 	simTab := container.NewTabItem("Simulation", leftScroll)
 	launchTab := container.NewTabItem("Launch Planner", launchScroll)
-	leftTabs := container.NewAppTabs(simTab, launchTab)
+	bodiesTab := container.NewTabItem("Bodies", bodiesPanel)
+	leftTabs := container.NewAppTabs(simTab, launchTab, bodiesTab)
 	leftTabs.SetTabLocation(container.TabLocationTop)
 	leftPanel := leftTabs
 
@@ -457,24 +468,7 @@ func (a *App) Run() {
 		a.window.CenterOnScreen()
 	}()
 
-	viewMenu := fyne.NewMenu("View",
-		fyne.NewMenuItem("Maximize Window", func() {
-			a.window.Resize(fyne.NewSize(2000, 1200))
-			a.window.CenterOnScreen()
-		}),
-		fyne.NewMenuItem("Fullscreen", func() {
-			a.window.SetFullScreen(!a.window.FullScreen())
-		}),
-		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("Reset Window Size", func() {
-			a.window.SetFullScreen(false)
-			a.window.Resize(fyne.NewSize(1600, 900))
-			a.window.CenterOnScreen()
-		}),
-	)
-
-	mainMenu := fyne.NewMainMenu(viewMenu)
-	a.window.SetMainMenu(mainMenu)
+	a.window.SetMainMenu(a.buildMainMenu())
 
 	var lastWidth, lastHeight float32
 

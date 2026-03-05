@@ -123,13 +123,14 @@ func (s *Simulator) CreatePlanetFromElements(p Planet) Body {
 	vz := vz2
 
 	return Body{
-		Name:     p.Name,
-		Mass:     p.Mass,
-		Position: math3d.Vec3{X: x, Y: y, Z: z},
-		Velocity: math3d.Vec3{X: vx, Y: vy, Z: vz},
-		Color:    p.Color,
-		Radius:   p.DisplayRadius,
-		Trail:    make([]math3d.Vec3, 0, s.maxTrailLen),
+		Name:      p.Name,
+		Mass:      p.Mass,
+		Position:  math3d.Vec3{X: x, Y: y, Z: z},
+		Velocity:  math3d.Vec3{X: vx, Y: vy, Z: vz},
+		Color:     p.Color,
+		Radius:    p.DisplayRadius,
+		Trail:     make([]math3d.Vec3, 0, s.maxTrailLen),
+		ShowTrail: true,
 	}
 }
 
@@ -192,7 +193,7 @@ func (s *Simulator) Step(dt float64) {
 			s.Planets[i].Position = pos[i]
 			s.Planets[i].Velocity = vel[i]
 
-			if s.ShowTrails {
+			if s.ShowTrails && s.Planets[i].ShowTrail {
 				s.Planets[i].Trail = append(s.Planets[i].Trail, s.Planets[i].Position)
 				if len(s.Planets[i].Trail) > s.maxTrailLen {
 					s.Planets[i].Trail = s.Planets[i].Trail[1:]
@@ -283,7 +284,7 @@ func (s *Simulator) Step(dt float64) {
 			k1v[i].Add(k2v[i].Mul(2)).Add(k3v[i].Mul(2)).Add(k4v[i]).Mul(dt / 6),
 		)
 
-		if s.ShowTrails {
+		if s.ShowTrails && s.Planets[i].ShowTrail {
 			planet.Trail = append(planet.Trail, planet.Position)
 			if len(planet.Trail) > s.maxTrailLen {
 				planet.Trail = planet.Trail[1:]
@@ -341,13 +342,14 @@ func (s *Simulator) GetPlanetSnapshot() []Body {
 	snapshot := make([]Body, len(s.Planets))
 	for i := range s.Planets {
 		snapshot[i] = Body{
-			Name:     s.Planets[i].Name,
-			Mass:     s.Planets[i].Mass,
-			Position: s.Planets[i].Position,
-			Velocity: s.Planets[i].Velocity,
-			Color:    s.Planets[i].Color,
-			Radius:   s.Planets[i].Radius,
-			Trail:    make([]math3d.Vec3, len(s.Planets[i].Trail)),
+			Name:      s.Planets[i].Name,
+			Mass:      s.Planets[i].Mass,
+			Position:  s.Planets[i].Position,
+			Velocity:  s.Planets[i].Velocity,
+			Color:     s.Planets[i].Color,
+			Radius:    s.Planets[i].Radius,
+			Trail:     make([]math3d.Vec3, len(s.Planets[i].Trail)),
+			ShowTrail: s.Planets[i].ShowTrail,
 		}
 		copy(snapshot[i].Trail, s.Planets[i].Trail)
 	}

@@ -29,6 +29,9 @@ type Renderer struct {
 	// Launch trajectory overlay
 	LaunchTrajectory *launch.Trajectory
 	LaunchEarthPos   math3d.Vec3
+
+	// Display options
+	ShowLabels bool
 }
 
 func NewRenderer(sim *physics.Simulator, vp *viewport.ViewPort) *Renderer {
@@ -38,6 +41,7 @@ func NewRenderer(sim *physics.Simulator, vp *viewport.ViewPort) *Renderer {
 		Cache:             NewRenderCache(),
 		SpacetimeRenderer: spacetime.NewSpacetimeRenderer(),
 		SelectedBodies:    make([]*physics.Body, 0, 2),
+		ShowLabels:        true,
 	}
 }
 
@@ -132,10 +136,12 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 		sunCircle.Move(fyne.NewPos(sunX-sunRadius, sunY-sunRadius))
 		objects = append(objects, sunCircle)
 
-		sunLabel := r.Cache.GetText("Sun", color.White)
-		sunLabel.TextSize = 10
-		sunLabel.Move(fyne.NewPos(sunX+sunRadius+5, sunY-5))
-		objects = append(objects, sunLabel)
+		if r.ShowLabels {
+			sunLabel := r.Cache.GetText("Sun", color.White)
+			sunLabel.TextSize = 10
+			sunLabel.Move(fyne.NewPos(sunX+sunRadius+5, sunY-5))
+			objects = append(objects, sunLabel)
+		}
 	}
 
 	for _, planet := range planets {
@@ -149,10 +155,12 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 			circle.Move(fyne.NewPos(x-planetRadius, y-planetRadius))
 			objects = append(objects, circle)
 
-			label := r.Cache.GetText(planet.Name, color.White)
-			label.TextSize = 10
-			label.Move(fyne.NewPos(x+planetRadius+3, y-5))
-			objects = append(objects, label)
+			if r.ShowLabels {
+				label := r.Cache.GetText(planet.Name, color.White)
+				label.TextSize = 10
+				label.Move(fyne.NewPos(x+planetRadius+3, y-5))
+				objects = append(objects, label)
+			}
 		}
 	}
 
@@ -261,23 +269,25 @@ func (r *Renderer) CreateLabelOverlay() *fyne.Container {
 
 	objects := []fyne.CanvasObject{}
 
-	sunX, sunY := r.Viewport.WorldToScreen(sun.Position)
-	if r.isOnScreen(sunX, sunY, canvasWidth, canvasHeight) {
-		sunRadius := float32(sun.Radius)
-		sunLabel := r.Cache.GetText("Sun", color.White)
-		sunLabel.TextSize = 10
-		sunLabel.Move(fyne.NewPos(sunX+sunRadius+5, sunY-5))
-		objects = append(objects, sunLabel)
-	}
+	if r.ShowLabels {
+		sunX, sunY := r.Viewport.WorldToScreen(sun.Position)
+		if r.isOnScreen(sunX, sunY, canvasWidth, canvasHeight) {
+			sunRadius := float32(sun.Radius)
+			sunLabel := r.Cache.GetText("Sun", color.White)
+			sunLabel.TextSize = 10
+			sunLabel.Move(fyne.NewPos(sunX+sunRadius+5, sunY-5))
+			objects = append(objects, sunLabel)
+		}
 
-	for _, planet := range planets {
-		x, y := r.Viewport.WorldToScreen(planet.Position)
-		if r.isOnScreen(x, y, canvasWidth, canvasHeight) {
-			planetRadius := float32(planet.Radius)
-			label := r.Cache.GetText(planet.Name, color.White)
-			label.TextSize = 10
-			label.Move(fyne.NewPos(x+planetRadius+3, y-5))
-			objects = append(objects, label)
+		for _, planet := range planets {
+			x, y := r.Viewport.WorldToScreen(planet.Position)
+			if r.isOnScreen(x, y, canvasWidth, canvasHeight) {
+				planetRadius := float32(planet.Radius)
+				label := r.Cache.GetText(planet.Name, color.White)
+				label.TextSize = 10
+				label.Move(fyne.NewPos(x+planetRadius+3, y-5))
+				objects = append(objects, label)
+			}
 		}
 	}
 
