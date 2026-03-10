@@ -92,6 +92,27 @@ func (vp *ViewPort) AdjustPan(deltaX, deltaY float64) {
 	vp.PanY += deltaY
 }
 
+// AdjustZoom multiplies the current zoom by a factor, clamped to [0.01, 100].
+func (vp *ViewPort) AdjustZoom(factor float64) {
+	vp.mu.Lock()
+	defer vp.mu.Unlock()
+	vp.Zoom *= factor
+	if vp.Zoom < 0.01 {
+		vp.Zoom = 0.01
+	}
+	if vp.Zoom > 100.0 {
+		vp.Zoom = 100.0
+	}
+}
+
+// AdjustRotation modifies pitch (X) and yaw (Y) by the given deltas.
+func (vp *ViewPort) AdjustRotation(dx, dy float64) {
+	vp.mu.Lock()
+	defer vp.mu.Unlock()
+	vp.RotationX += dx
+	vp.RotationY += dy
+}
+
 // UpdateCanvasSize updates the viewport canvas dimensions
 func (vp *ViewPort) UpdateCanvasSize(width, height float64) {
 	vp.mu.Lock()

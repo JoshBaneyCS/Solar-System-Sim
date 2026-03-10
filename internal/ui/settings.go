@@ -4,8 +4,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
-
-	"solar-system-sim/internal/physics"
 )
 
 // Settings holds persistent application configuration.
@@ -65,27 +63,14 @@ func (s Settings) Save(prefs fyne.Preferences) {
 	prefs.SetBool("relativity", s.Relativity)
 }
 
-// applySettings pushes settings to the simulator and renderer.
-func (a *App) applySettings(s Settings) {
-	a.simulator.Lock()
-	a.simulator.ShowTrails = s.ShowTrails
-	a.simulator.ShowSpacetime = s.ShowSpacetime
-	a.simulator.PlanetGravityEnabled = s.PlanetGravity
-	a.simulator.RelativisticEffects = s.Relativity
-	if s.Integrator == "rk4" {
-		a.simulator.Integrator = physics.IntegratorRK4
-	} else {
-		a.simulator.Integrator = physics.IntegratorVerlet
-	}
-	a.simulator.Unlock()
-
-	a.showLabels = s.ShowLabels
-	a.renderer.ShowLabels = s.ShowLabels
-}
-
 // showSettingsDialog opens a modal settings dialog.
+// It reads from the centralized AppState and writes back through it.
 func (a *App) showSettingsDialog() {
-	s := a.settings
+	// Read current state into a local Settings copy for the dialog
+	s := a.state.ToSettings()
+	s.GPUMode = a.settings.GPUMode
+	s.RayTracing = a.settings.RayTracing
+	s.QualityPreset = a.settings.QualityPreset
 
 	gpuSelect := widget.NewSelect([]string{"Auto", "On", "Off"}, func(v string) {
 		s.GPUMode = v
@@ -145,7 +130,7 @@ func (a *App) showSettingsDialog() {
 	dialog.ShowCustomConfirm("Settings", "Apply", "Cancel", form, func(apply bool) {
 		if apply {
 			a.settings = s
-			a.applySettings(s)
+			a.state.ApplyFromSettings(s)
 			s.Save(a.fyneApp.Preferences())
 		}
 	}, a.window)

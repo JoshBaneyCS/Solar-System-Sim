@@ -2,7 +2,12 @@ package render
 
 import (
 	"fmt"
+	"image"
 	"image/color"
+	"log"
+	"math"
+	"strings"
+	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -22,6 +27,7 @@ type Renderer struct {
 	Viewport          *viewport.ViewPort
 	Cache             *RenderCache
 	SpacetimeRenderer *spacetime.SpacetimeRenderer
+	Textures          *TextureManager
 
 	// Distance measurement
 	SelectedBodies []*physics.Body
@@ -30,19 +36,38 @@ type Renderer struct {
 	LaunchTrajectory *launch.Trajectory
 	LaunchEarthPos   math3d.Vec3
 
+	// Launch vehicle position for animated marker
+	LaunchVehiclePos *math3d.Vec3
+
 	// Display options
 	ShowLabels bool
+
+	// Lighting cache
+	lightingCache     map[string]*image.RGBA // name+size -> shaded image
+	lightingCacheMu   sync.Mutex
+	lastSunPos        math3d.Vec3
+	sunGlowCache      *image.RGBA
+	sunGlowCacheSize  int
 }
 
 func NewRenderer(sim *physics.Simulator, vp *viewport.ViewPort) *Renderer {
-	return &Renderer{
+	r := &Renderer{
 		Simulator:         sim,
 		Viewport:          vp,
 		Cache:             NewRenderCache(),
 		SpacetimeRenderer: spacetime.NewSpacetimeRenderer(),
+		Textures:          NewTextureManager(),
 		SelectedBodies:    make([]*physics.Body, 0, 2),
 		ShowLabels:        true,
+		lightingCache:     make(map[string]*image.RGBA),
 	}
+
+	// Try to load textures (non-fatal if assets not found)
+	if err := r.Textures.LoadAll(); err != nil {
+		log.Printf("Textures: %v (using solid colors)", err)
+	}
+
+	return r
 }
 
 // CreateCanvas renders the simulation state to a canvas
@@ -83,7 +108,6 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 				}
 
 				for j := 0; j < len(planet.Trail)-step; j += step {
-					// Gather 4 control points for Catmull-Rom (clamped at edges)
 					i0 := j - step
 					if i0 < 0 {
 						i0 = 0
@@ -105,7 +129,6 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 						lineColor = color.RGBA{c.R, c.G, c.B, alpha}
 					}
 
-					// Subdivide segment into 4 interpolated sub-segments
 					const nSub = 4
 					prevX, prevY := r.Viewport.WorldToScreen(p1)
 					for k := 1; k <= nSub; k++ {
@@ -128,13 +151,49 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 		}
 	}
 
+	// Create lighting model
+	lighting := NewLightingModel(sun.Position)
+
+	// Invalidate shading cache if sun moved significantly
+	r.lightingCacheMu.Lock()
+	sunDist := sun.Position.Sub(r.lastSunPos).Magnitude()
+	if sunDist > 1e9 { // ~0.007 AU
+		r.lightingCache = make(map[string]*image.RGBA)
+		r.lastSunPos = sun.Position
+	}
+	r.lightingCacheMu.Unlock()
+
+	// Render Sun
 	sunX, sunY := r.Viewport.WorldToScreen(sun.Position)
 	if r.isOnScreen(sunX, sunY, canvasWidth, canvasHeight) {
 		sunRadius := float32(sun.Radius)
-		sunCircle := r.Cache.GetCircle(sun.Color)
-		sunCircle.Resize(fyne.NewSize(sunRadius*2, sunRadius*2))
-		sunCircle.Move(fyne.NewPos(sunX-sunRadius, sunY-sunRadius))
-		objects = append(objects, sunCircle)
+
+		// Sun glow
+		glowDiam := int(sunRadius * 4)
+		if glowDiam > 4 {
+			glowImg := r.getSunGlow(glowDiam)
+			if glowImg != nil {
+				glow := r.Cache.GetImage(glowImg)
+				glow.Resize(fyne.NewSize(float32(glowDiam), float32(glowDiam)))
+				glow.Move(fyne.NewPos(sunX-float32(glowDiam)/2, sunY-float32(glowDiam)/2))
+				objects = append(objects, glow)
+			}
+		}
+
+		// Sun body — use texture if available
+		sunDiam := int(sunRadius * 2)
+		sunImg := r.Textures.GetCircleImage("sun", sunDiam)
+		if sunImg != nil {
+			sunObj := r.Cache.GetImage(sunImg)
+			sunObj.Resize(fyne.NewSize(sunRadius*2, sunRadius*2))
+			sunObj.Move(fyne.NewPos(sunX-sunRadius, sunY-sunRadius))
+			objects = append(objects, sunObj)
+		} else {
+			sunCircle := r.Cache.GetCircle(sun.Color)
+			sunCircle.Resize(fyne.NewSize(sunRadius*2, sunRadius*2))
+			sunCircle.Move(fyne.NewPos(sunX-sunRadius, sunY-sunRadius))
+			objects = append(objects, sunCircle)
+		}
 
 		if r.ShowLabels {
 			sunLabel := r.Cache.GetText("Sun", color.White)
@@ -144,16 +203,32 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 		}
 	}
 
+	// Render planets
 	for _, planet := range planets {
 		x, y := r.Viewport.WorldToScreen(planet.Position)
 
 		if r.isOnScreen(x, y, canvasWidth, canvasHeight) {
 			planetRadius := float32(planet.Radius)
+			diameter := int(planetRadius * 2)
 
-			circle := r.Cache.GetCircle(planet.Color)
-			circle.Resize(fyne.NewSize(planetRadius*2, planetRadius*2))
-			circle.Move(fyne.NewPos(x-planetRadius, y-planetRadius))
-			objects = append(objects, circle)
+			rendered := false
+			if r.Textures.IsLoaded() && diameter >= 4 {
+				shadedImg := r.getShadedPlanetImage(planet.Name, diameter, lighting, planet.Position)
+				if shadedImg != nil {
+					imgObj := r.Cache.GetImage(shadedImg)
+					imgObj.Resize(fyne.NewSize(planetRadius*2, planetRadius*2))
+					imgObj.Move(fyne.NewPos(x-planetRadius, y-planetRadius))
+					objects = append(objects, imgObj)
+					rendered = true
+				}
+			}
+
+			if !rendered {
+				circle := r.Cache.GetCircle(planet.Color)
+				circle.Resize(fyne.NewSize(planetRadius*2, planetRadius*2))
+				circle.Move(fyne.NewPos(x-planetRadius, y-planetRadius))
+				objects = append(objects, circle)
+			}
 
 			if r.ShowLabels {
 				label := r.Cache.GetText(planet.Name, color.White)
@@ -167,6 +242,17 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 	// Render launch trajectory
 	if r.LaunchTrajectory != nil && len(r.LaunchTrajectory.Points) > 1 {
 		objects = append(objects, r.renderTrajectory(canvasWidth, canvasHeight)...)
+	}
+
+	// Render launch vehicle marker
+	if r.LaunchVehiclePos != nil {
+		vx, vy := r.Viewport.WorldToScreen(*r.LaunchVehiclePos)
+		if r.isOnScreen(vx, vy, canvasWidth, canvasHeight) {
+			marker := r.Cache.GetCircle(color.RGBA{0, 255, 200, 255})
+			marker.Resize(fyne.NewSize(8, 8))
+			marker.Move(fyne.NewPos(vx-4, vy-4))
+			objects = append(objects, marker)
+		}
 	}
 
 	if len(r.SelectedBodies) == 2 {
@@ -201,6 +287,41 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 	return container.NewWithoutLayout(objects...)
 }
 
+// getShadedPlanetImage returns a cached or freshly-shaded planet texture.
+func (r *Renderer) getShadedPlanetImage(name string, diameter int, lighting *LightingModel, planetPos math3d.Vec3) image.Image {
+	key := fmt.Sprintf("%s_%d", strings.ToLower(name), diameter)
+
+	r.lightingCacheMu.Lock()
+	if cached, ok := r.lightingCache[key]; ok {
+		r.lightingCacheMu.Unlock()
+		return cached
+	}
+	r.lightingCacheMu.Unlock()
+
+	baseImg := r.Textures.GetCircleImage(name, diameter)
+	if baseImg == nil {
+		return nil
+	}
+
+	shaded := lighting.ApplyDiffuseShading(baseImg, planetPos)
+
+	r.lightingCacheMu.Lock()
+	r.lightingCache[key] = shaded
+	r.lightingCacheMu.Unlock()
+
+	return shaded
+}
+
+// getSunGlow returns a cached or freshly-generated sun glow image.
+func (r *Renderer) getSunGlow(diameter int) image.Image {
+	if r.sunGlowCache != nil && r.sunGlowCacheSize == diameter {
+		return r.sunGlowCache
+	}
+	r.sunGlowCache = SunGlowImage(diameter)
+	r.sunGlowCacheSize = diameter
+	return r.sunGlowCache
+}
+
 // renderTrajectory draws the launch trajectory as colored line segments.
 func (r *Renderer) renderTrajectory(canvasWidth, canvasHeight float64) []fyne.CanvasObject {
 	traj := r.LaunchTrajectory
@@ -210,7 +331,6 @@ func (r *Renderer) renderTrajectory(canvasWidth, canvasHeight float64) []fyne.Ca
 
 	var objects []fyne.CanvasObject
 
-	// Convert Earth-centered trajectory to heliocentric for rendering
 	points := traj.Points
 	isEarthCentered := traj.Frame == launch.EarthCentered
 
@@ -219,7 +339,7 @@ func (r *Renderer) renderTrajectory(canvasWidth, canvasHeight float64) []fyne.Ca
 		step = len(points) / 500
 	}
 
-	trajectoryColor := color.RGBA{0, 255, 128, 200} // green
+	trajectoryColor := color.RGBA{0, 255, 128, 200}
 
 	for j := 0; j < len(points)-step; j += step {
 		p1 := points[j].Position
@@ -235,7 +355,6 @@ func (r *Renderer) renderTrajectory(canvasWidth, canvasHeight float64) []fyne.Ca
 
 		if r.isOnScreen(x1, y1, canvasWidth, canvasHeight) ||
 			r.isOnScreen(x2, y2, canvasWidth, canvasHeight) {
-			// Color gradient: green at start -> orange at end
 			progress := float64(j) / float64(len(points))
 			c := color.RGBA{
 				R: uint8(progress * 255),
@@ -322,3 +441,6 @@ func (r *Renderer) isOnScreen(x, y float32, width, height float64) bool {
 	return x >= -margin && x <= float32(width)+margin &&
 		y >= -margin && y <= float32(height)+margin
 }
+
+// Ensure math is imported (used by lighting angle threshold)
+var _ = math.Pi

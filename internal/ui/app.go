@@ -32,6 +32,7 @@ type App struct {
 	launch      *launchState
 	showLabels  bool
 	settings    Settings
+	state       *AppState
 }
 
 func NewApp() *App {
@@ -52,8 +53,9 @@ func NewApp() *App {
 		showLabels: true,
 	}
 
+	a.state = NewAppState(sim, a)
 	a.settings = LoadSettings(fyneApp.Preferences())
-	a.applySettings(a.settings)
+	a.state.ApplyFromSettings(a.settings)
 
 	return a
 }
@@ -188,63 +190,60 @@ Zoom: %.2fx`,
 
 func (a *App) createControls() *fyne.Container {
 	playButton := widget.NewButton("Play", func() {
-		a.simulator.IsPlaying = !a.simulator.IsPlaying
+		a.state.SetIsPlaying(!a.state.IsPlaying())
 	})
 
-	speedLabel := widget.NewLabel(fmt.Sprintf("Speed: %.1fx", a.simulator.TimeSpeed))
+	speedLabel := widget.NewLabel(fmt.Sprintf("Speed: %.1fx", a.state.TimeSpeed()))
 	speedSlider := widget.NewSlider(-10, 10)
 	speedSlider.Value = 0
 	speedSlider.Step = 0.1
 	speedSlider.OnChanged = func(value float64) {
-		a.simulator.TimeSpeed = math.Pow(2, value)
-		speedLabel.SetText(fmt.Sprintf("Speed: %.1fx", a.simulator.TimeSpeed))
+		a.state.SetTimeSpeed(math.Pow(2, value))
+		speedLabel.SetText(fmt.Sprintf("Speed: %.1fx", a.state.TimeSpeed()))
 	}
 
-	rewindButton := widget.NewButton("⏪ Rewind", func() {
-		if a.simulator.TimeSpeed > 0 {
-			a.simulator.TimeSpeed = -a.simulator.TimeSpeed
+	rewindButton := widget.NewButton("Rewind", func() {
+		ts := a.state.TimeSpeed()
+		if ts > 0 {
+			a.state.SetTimeSpeed(-ts)
 		}
-		a.simulator.IsPlaying = true
+		a.state.SetIsPlaying(true)
 	})
 
-	forwardButton := widget.NewButton("Fast Forward ⏩", func() {
-		if a.simulator.TimeSpeed < 0 {
-			a.simulator.TimeSpeed = -a.simulator.TimeSpeed
+	forwardButton := widget.NewButton("Fast Forward", func() {
+		ts := a.state.TimeSpeed()
+		if ts < 0 {
+			a.state.SetTimeSpeed(-ts)
 		}
-		a.simulator.IsPlaying = true
+		a.state.SetIsPlaying(true)
 	})
 
 	trailsCheck := widget.NewCheck("Show Orbital Trails", func(checked bool) {
-		a.simulator.ShowTrails = checked
-		if !checked {
-			a.simulator.ClearTrails()
-		}
+		a.state.SetShowTrails(checked)
 	})
-	trailsCheck.Checked = true
+	trailsCheck.Checked = a.state.ShowTrails()
 
 	spacetimeCheck := widget.NewCheck("Show Spacetime Fabric", func(checked bool) {
-		a.simulator.ShowSpacetime = checked
+		a.state.SetShowSpacetime(checked)
 	})
-	spacetimeCheck.Checked = false
+	spacetimeCheck.Checked = a.state.ShowSpacetime()
 
 	planetGravityCheck := widget.NewCheck("Planet-Planet Gravity (N-Body)", func(checked bool) {
-		a.simulator.PlanetGravityEnabled = checked
+		a.state.SetPlanetGravity(checked)
 	})
-	planetGravityCheck.Checked = true
+	planetGravityCheck.Checked = a.state.PlanetGravity()
 
 	relativityCheck := widget.NewCheck("General Relativity (Mercury)", func(checked bool) {
-		a.simulator.RelativisticEffects = checked
+		a.state.SetRelativity(checked)
 	})
-	relativityCheck.Checked = true
+	relativityCheck.Checked = a.state.Relativity()
 
 	integratorSelect := widget.NewSelect([]string{"Verlet (symplectic)", "RK4 (classic)"}, func(selected string) {
-		a.simulator.Lock()
 		if selected == "RK4 (classic)" {
-			a.simulator.Integrator = physics.IntegratorRK4
+			a.state.SetIntegrator(physics.IntegratorRK4)
 		} else {
-			a.simulator.Integrator = physics.IntegratorVerlet
+			a.state.SetIntegrator(physics.IntegratorVerlet)
 		}
-		a.simulator.Unlock()
 	})
 	integratorSelect.Selected = "Verlet (symplectic)"
 
@@ -267,7 +266,7 @@ func (a *App) createControls() *fyne.Container {
 		zoomLabel.SetText(fmt.Sprintf("Zoom: %.2fx", zoom))
 	}
 
-	autoFitButton := widget.NewButton("🔍 Auto-Fit All Planets", func() {
+	autoFitButton := widget.NewButton("Auto-Fit All Planets", func() {
 		planets := a.simulator.GetPlanetSnapshot()
 		sun := a.simulator.GetSunSnapshot()
 		a.viewport.AutoFit(planets, sun)
@@ -351,22 +350,39 @@ func (a *App) createControls() *fyne.Container {
 	})
 
 	resetButton := widget.NewButton("Reset Simulation", func() {
-		a.simulator = physics.NewSimulator()
+		newSim := physics.NewSimulator()
+		a.simulator = newSim
 		a.viewport = viewport.NewViewPort()
 		a.renderer.Simulator = a.simulator
 		a.renderer.Viewport = a.viewport
+		a.state.RebindSimulator(a.simulator)
+		a.state.ResetToDefaults()
 		speedSlider.Value = 0
 		zoomSlider.Value = 0
 		sunMassSlider.Value = 1.0
 		rotXSlider.Value = 0
 		rotYSlider.Value = 0
 		rotZSlider.Value = 0
-		trailsCheck.Checked = true
-		spacetimeCheck.Checked = false
-		planetGravityCheck.Checked = true
-		relativityCheck.Checked = true
-		enable3DCheck.Checked = false
 		followSelect.Selected = "None (Free Camera)"
+	})
+
+	// Register listener to sync widget state when state changes from menu/settings
+	a.state.AddListener(func() {
+		trailsCheck.Checked = a.state.ShowTrails()
+		spacetimeCheck.Checked = a.state.ShowSpacetime()
+		planetGravityCheck.Checked = a.state.PlanetGravity()
+		relativityCheck.Checked = a.state.Relativity()
+		enable3DCheck.Checked = false
+		if a.state.Integrator() == physics.IntegratorRK4 {
+			integratorSelect.Selected = "RK4 (classic)"
+		} else {
+			integratorSelect.Selected = "Verlet (symplectic)"
+		}
+		trailsCheck.Refresh()
+		spacetimeCheck.Refresh()
+		planetGravityCheck.Refresh()
+		relativityCheck.Refresh()
+		integratorSelect.Refresh()
 	})
 
 	controls := container.NewVBox(
@@ -434,7 +450,9 @@ func (a *App) Run() {
 	a.canvas = a.renderer.CreateCanvas()
 
 	canvasRect := canvas.NewRectangle(color.Transparent)
-	canvasContainer := container.NewMax(canvasRect, a.canvas)
+	rawCanvasContainer := container.NewMax(canvasRect, a.canvas)
+	interactiveCanvas := NewInteractiveCanvas(rawCanvasContainer, a.viewport)
+	canvasContainer := interactiveCanvas
 
 	leftScroll := container.NewScroll(controls)
 	leftScroll.SetMinSize(fyne.NewSize(280, 600))
@@ -484,6 +502,7 @@ func (a *App) Run() {
 				if size.Width > 0 && size.Height > 0 {
 					a.viewport.UpdateCanvasSize(float64(size.Width), float64(size.Height))
 					canvasRect.Resize(size)
+					rawCanvasContainer.Resize(size)
 				}
 			}
 		}

@@ -1,6 +1,7 @@
 package render
 
 import (
+	"image"
 	"image/color"
 	"sync"
 
@@ -12,9 +13,11 @@ type RenderCache struct {
 	circles     []*canvas.Circle
 	lines       []*canvas.Line
 	texts       []*canvas.Text
+	images      []*canvas.Image
 	circleIndex int
 	lineIndex   int
 	textIndex   int
+	imageIndex  int
 	mu          sync.Mutex
 }
 
@@ -23,6 +26,7 @@ func NewRenderCache() *RenderCache {
 		circles: make([]*canvas.Circle, 0, 100),
 		lines:   make([]*canvas.Line, 0, 5000),
 		texts:   make([]*canvas.Text, 0, 50),
+		images:  make([]*canvas.Image, 0, 20),
 	}
 }
 
@@ -32,6 +36,7 @@ func (rc *RenderCache) Reset() {
 	rc.circleIndex = 0
 	rc.lineIndex = 0
 	rc.textIndex = 0
+	rc.imageIndex = 0
 }
 
 func (rc *RenderCache) GetCircle(col color.Color) *canvas.Circle {
@@ -84,4 +89,24 @@ func (rc *RenderCache) GetText(text string, col color.Color) *canvas.Text {
 	rc.texts = append(rc.texts, textObj)
 	rc.textIndex++
 	return textObj
+}
+
+// GetImage returns a pooled canvas.Image set to the given source image.
+func (rc *RenderCache) GetImage(img image.Image) *canvas.Image {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+
+	if rc.imageIndex < len(rc.images) {
+		imgObj := rc.images[rc.imageIndex]
+		imgObj.Image = img
+		imgObj.Translucency = 0
+		rc.imageIndex++
+		return imgObj
+	}
+
+	imgObj := canvas.NewImageFromImage(img)
+	imgObj.FillMode = canvas.ImageFillOriginal
+	rc.images = append(rc.images, imgObj)
+	rc.imageIndex++
+	return imgObj
 }

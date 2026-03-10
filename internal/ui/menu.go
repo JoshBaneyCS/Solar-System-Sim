@@ -30,33 +30,32 @@ func (a *App) buildMainMenu() *fyne.MainMenu {
 
 	// --- View menu ---
 	trailsItem := fyne.NewMenuItem("Toggle Trails", nil)
-	trailsItem.Checked = a.simulator.ShowTrails
-	trailsItem.Action = func() {
-		a.simulator.Lock()
-		a.simulator.ShowTrails = !a.simulator.ShowTrails
-		trailsItem.Checked = a.simulator.ShowTrails
-		a.simulator.Unlock()
-		if !a.simulator.ShowTrails {
-			a.simulator.ClearTrails()
-		}
-	}
+	trailsItem.Checked = a.state.ShowTrails()
 
 	spacetimeItem := fyne.NewMenuItem("Toggle Spacetime Fabric", nil)
-	spacetimeItem.Checked = a.simulator.ShowSpacetime
-	spacetimeItem.Action = func() {
-		a.simulator.Lock()
-		a.simulator.ShowSpacetime = !a.simulator.ShowSpacetime
-		spacetimeItem.Checked = a.simulator.ShowSpacetime
-		a.simulator.Unlock()
-	}
+	spacetimeItem.Checked = a.state.ShowSpacetime()
 
 	labelsItem := fyne.NewMenuItem("Toggle Labels", nil)
-	labelsItem.Checked = a.showLabels
-	labelsItem.Action = func() {
-		a.showLabels = !a.showLabels
-		a.renderer.ShowLabels = a.showLabels
-		labelsItem.Checked = a.showLabels
+	labelsItem.Checked = a.state.ShowLabels()
+
+	trailsItem.Action = func() {
+		a.state.SetShowTrails(!a.state.ShowTrails())
 	}
+
+	spacetimeItem.Action = func() {
+		a.state.SetShowSpacetime(!a.state.ShowSpacetime())
+	}
+
+	labelsItem.Action = func() {
+		a.state.SetShowLabels(!a.state.ShowLabels())
+	}
+
+	// Register listener to keep menu check marks in sync
+	a.state.AddListener(func() {
+		trailsItem.Checked = a.state.ShowTrails()
+		spacetimeItem.Checked = a.state.ShowSpacetime()
+		labelsItem.Checked = a.state.ShowLabels()
+	})
 
 	maximizeItem := fyne.NewMenuItem("Maximize Window", func() {
 		a.window.Resize(fyne.NewSize(2000, 1200))
@@ -79,38 +78,39 @@ func (a *App) buildMainMenu() *fyne.MainMenu {
 
 	// --- Simulation menu ---
 	playPause := fyne.NewMenuItem("Play/Pause", func() {
-		a.simulator.IsPlaying = !a.simulator.IsPlaying
+		a.state.SetIsPlaying(!a.state.IsPlaying())
 	})
 
 	resetItem := fyne.NewMenuItem("Reset", func() {
 		a.simulator = physics.NewSimulator()
 		a.renderer.Simulator = a.simulator
+		a.state.RebindSimulator(a.simulator)
+		a.state.ResetToDefaults()
 	})
 
 	verletItem := fyne.NewMenuItem("Integrator: Verlet", nil)
 	rk4Item := fyne.NewMenuItem("Integrator: RK4", nil)
 
 	updateIntegratorChecks := func() {
-		a.simulator.RLock()
-		isVerlet := a.simulator.Integrator == physics.IntegratorVerlet
-		a.simulator.RUnlock()
+		isVerlet := a.state.Integrator() == physics.IntegratorVerlet
 		verletItem.Checked = isVerlet
 		rk4Item.Checked = !isVerlet
 	}
 	updateIntegratorChecks()
 
 	verletItem.Action = func() {
-		a.simulator.Lock()
-		a.simulator.Integrator = physics.IntegratorVerlet
-		a.simulator.Unlock()
+		a.state.SetIntegrator(physics.IntegratorVerlet)
 		updateIntegratorChecks()
 	}
 	rk4Item.Action = func() {
-		a.simulator.Lock()
-		a.simulator.Integrator = physics.IntegratorRK4
-		a.simulator.Unlock()
+		a.state.SetIntegrator(physics.IntegratorRK4)
 		updateIntegratorChecks()
 	}
+
+	// Sync integrator menu checks on state changes
+	a.state.AddListener(func() {
+		updateIntegratorChecks()
+	})
 
 	simMenu := fyne.NewMenu("Simulation",
 		playPause, resetItem,
