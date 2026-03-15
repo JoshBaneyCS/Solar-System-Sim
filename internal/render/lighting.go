@@ -35,7 +35,6 @@ func (lm *LightingModel) ApplyDiffuseShading(src image.Image, planetPos math3d.V
 	lightDir := lm.SunPosition.Sub(planetPos).Normalize()
 
 	radius := float64(w) / 2.0
-	radiusSq := radius * radius
 
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
