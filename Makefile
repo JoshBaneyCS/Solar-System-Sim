@@ -1,4 +1,4 @@
-.PHONY: all build build-cli build-solar-sim build-solar-sim-headless run test bench clean deps dev help lint vet package-macos package-linux package-windows rust-build rust-test rust-clean build-rust test-rust run-rust render-build build-gpu run-gpu test-gpu assets-setup meshgen validate-assets
+.PHONY: all build build-cli build-solar-sim build-solar-sim-headless run test bench clean deps dev help lint vet package-macos package-linux package-windows rust-build rust-test rust-clean build-rust test-rust run-rust render-build build-gpu run-gpu test-gpu assets-setup meshgen validate-assets build-metal build-cuda build-rocm build-metal-gpu build-cuda-gpu build-rocm-gpu build-metal-full build-cuda-full build-rocm-full
 
 # Default target
 all: deps build
@@ -109,6 +109,65 @@ run-gpu: build-gpu
 test-gpu: rust-build render-build
 	@echo "Running tests with GPU rendering..."
 	@CGO_ENABLED=1 go test -tags "rust_physics,rust_render" -v ./...
+
+# --- Native GPU rendering targets ---
+
+# Build native Metal ray tracer (macOS only)
+build-metal:
+	@echo "Building Metal ray tracer..."
+	@cd native_gpu/metal && make
+
+# Build native CUDA ray tracer (NVIDIA Linux/Windows)
+build-cuda:
+	@echo "Building CUDA ray tracer..."
+	@cd native_gpu/cuda && make
+
+# Build native ROCm ray tracer (AMD Linux)
+build-rocm:
+	@echo "Building ROCm ray tracer..."
+	@cd native_gpu/rocm && make
+
+# Build GUI with native Metal rendering
+build-metal-gpu: deps build-metal
+	@echo "Building Solar System Simulator (Metal rendering)..."
+	@mkdir -p bin
+	@CGO_ENABLED=1 go build -tags "metal_render" -o bin/solar-system-sim ./cmd/gui
+	@echo "Build complete: bin/solar-system-sim (Metal rendering enabled)"
+
+# Build GUI with native CUDA rendering
+build-cuda-gpu: deps build-cuda
+	@echo "Building Solar System Simulator (CUDA rendering)..."
+	@mkdir -p bin
+	@CGO_ENABLED=1 go build -tags "cuda_render" -o bin/solar-system-sim ./cmd/gui
+	@echo "Build complete: bin/solar-system-sim (CUDA rendering enabled)"
+
+# Build GUI with native ROCm rendering
+build-rocm-gpu: deps build-rocm
+	@echo "Building Solar System Simulator (ROCm rendering)..."
+	@mkdir -p bin
+	@CGO_ENABLED=1 go build -tags "rocm_render" -o bin/solar-system-sim ./cmd/gui
+	@echo "Build complete: bin/solar-system-sim (ROCm rendering enabled)"
+
+# Build GUI with Rust physics + native Metal rendering
+build-metal-full: deps rust-build build-metal
+	@echo "Building Solar System Simulator (Rust physics + Metal rendering)..."
+	@mkdir -p bin
+	@CGO_ENABLED=1 go build -tags "rust_physics,metal_render" -o bin/solar-system-sim ./cmd/gui
+	@echo "Build complete: bin/solar-system-sim (Rust physics + Metal rendering)"
+
+# Build GUI with Rust physics + native CUDA rendering
+build-cuda-full: deps rust-build build-cuda
+	@echo "Building Solar System Simulator (Rust physics + CUDA rendering)..."
+	@mkdir -p bin
+	@CGO_ENABLED=1 go build -tags "rust_physics,cuda_render" -o bin/solar-system-sim ./cmd/gui
+	@echo "Build complete: bin/solar-system-sim (Rust physics + CUDA rendering)"
+
+# Build GUI with Rust physics + native ROCm rendering
+build-rocm-full: deps rust-build build-rocm
+	@echo "Building Solar System Simulator (Rust physics + ROCm rendering)..."
+	@mkdir -p bin
+	@CGO_ENABLED=1 go build -tags "rust_physics,rocm_render" -o bin/solar-system-sim ./cmd/gui
+	@echo "Build complete: bin/solar-system-sim (Rust physics + ROCm rendering)"
 
 # --- Asset pipeline targets ---
 
@@ -235,6 +294,17 @@ help:
 	@echo "  make build-gpu    - Build GUI with Rust physics + GPU rendering"
 	@echo "  make run-gpu      - Build and run GUI with GPU rendering"
 	@echo "  make test-gpu     - Run tests with GPU rendering"
+	@echo ""
+	@echo "Native GPU rendering:"
+	@echo "  make build-metal      - Build native Metal ray tracer (macOS)"
+	@echo "  make build-cuda       - Build native CUDA ray tracer (NVIDIA)"
+	@echo "  make build-rocm       - Build native ROCm ray tracer (AMD)"
+	@echo "  make build-metal-gpu  - Build GUI with Metal rendering"
+	@echo "  make build-cuda-gpu   - Build GUI with CUDA rendering"
+	@echo "  make build-rocm-gpu   - Build GUI with ROCm rendering"
+	@echo "  make build-metal-full - Build GUI with Rust physics + Metal rendering"
+	@echo "  make build-cuda-full  - Build GUI with Rust physics + CUDA rendering"
+	@echo "  make build-rocm-full  - Build GUI with Rust physics + ROCm rendering"
 	@echo ""
 	@echo "Packaging:"
 	@echo "  make package-macos   - Create macOS .dmg (after building)"

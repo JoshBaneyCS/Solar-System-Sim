@@ -1,4 +1,4 @@
-//go:build !rust_render
+//go:build !rust_render && !metal_render && !cuda_render && !rocm_render
 
 package ffi
 
