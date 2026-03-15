@@ -43,11 +43,11 @@ type Renderer struct {
 	ShowLabels bool
 
 	// Lighting cache
-	lightingCache     map[string]*image.RGBA // name+size -> shaded image
-	lightingCacheMu   sync.Mutex
-	lastSunPos        math3d.Vec3
-	sunGlowCache      *image.RGBA
-	sunGlowCacheSize  int
+	lightingCache    map[string]*image.RGBA // name+size -> shaded image
+	lightingCacheMu  sync.Mutex
+	lastSunPos       math3d.Vec3
+	sunGlowCache     *image.RGBA
+	sunGlowCacheSize int
 }
 
 func NewRenderer(sim *physics.Simulator, vp *viewport.ViewPort) *Renderer {

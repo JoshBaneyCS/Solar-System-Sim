@@ -17,8 +17,8 @@ import (
 // TextureManager loads and caches planet textures as circular images.
 type TextureManager struct {
 	mu       sync.RWMutex
-	textures map[string]image.Image            // planet name -> raw texture
-	circles  map[string]map[int]*image.RGBA    // planet name -> size -> circular cutout
+	textures map[string]image.Image         // planet name -> raw texture
+	circles  map[string]map[int]*image.RGBA // planet name -> size -> circular cutout
 	loaded   bool
 }
 

@@ -33,10 +33,14 @@ type App struct {
 	showLabels  bool
 	settings    Settings
 	state       *AppState
+	statusBar   *StatusBar
+	playback    *MissionPlayback
+	runtimeInfo RuntimeInfo
 }
 
 func NewApp() *App {
 	fyneApp := app.NewWithID("com.joshbaney.solar-sim")
+	fyneApp.Settings().SetTheme(&SpaceTheme{})
 	window := fyneApp.NewWindow("Solar System Simulator")
 
 	sim := physics.NewSimulator()
@@ -44,18 +48,22 @@ func NewApp() *App {
 	r := render.NewRenderer(sim, vp)
 
 	a := &App{
-		fyneApp:    fyneApp,
-		window:     window,
-		simulator:  sim,
-		viewport:   vp,
-		renderer:   r,
-		launch:     newLaunchState(),
-		showLabels: true,
+		fyneApp:     fyneApp,
+		window:      window,
+		simulator:   sim,
+		viewport:    vp,
+		renderer:    r,
+		launch:      newLaunchState(),
+		showLabels:  true,
+		statusBar:   NewStatusBar(),
+		runtimeInfo: DetectRuntime(),
 	}
 
 	a.state = NewAppState(sim, a)
 	a.settings = LoadSettings(fyneApp.Preferences())
 	a.state.ApplyFromSettings(a.settings)
+	a.statusBar.SetInfo(a.runtimeInfo.String())
+	a.statusBar.StartFPSCounter()
 
 	return a
 }
@@ -476,7 +484,7 @@ func (a *App) Run() {
 	)
 	mainContent.SetOffset(0.7)
 
-	content := container.NewBorder(nil, nil, leftPanel, nil, mainContent)
+	content := container.NewBorder(nil, a.statusBar.Container(), leftPanel, nil, mainContent)
 
 	a.window.SetContent(content)
 
@@ -522,8 +530,22 @@ func (a *App) Run() {
 				}
 			}
 
+			// Tick mission playback
+			if a.playback != nil {
+				a.playback.Tick(0.016) // 16ms real time
+				worldPos := a.playback.WorldPosition()
+				a.renderer.LaunchVehiclePos = &worldPos
+			}
+
+			// Update status bar
+			a.simulator.RLock()
+			simDays := a.simulator.CurrentTime / 86400
+			simSpeed := a.simulator.TimeSpeed
+			a.simulator.RUnlock()
+			a.statusBar.Update(simDays, simSpeed, a.viewport.Zoom)
+			a.statusBar.IncrementFrame()
+
 			if a.useGPU && a.gpuRenderer != nil {
-				// GPU render path: raster + text label overlay
 				labels := a.gpuRenderer.CreateLabelOverlay()
 				a.canvas.Objects = []fyne.CanvasObject{a.gpuRenderer.Raster(), labels}
 				a.gpuRenderer.Refresh()

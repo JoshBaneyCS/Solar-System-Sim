@@ -24,7 +24,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.21"
+          go-version-file: go.mod
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -56,15 +56,31 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Test (all packages)
+      - name: Test (all packages with race detector)
         if: matrix.test-all
-        run: go test -v ./...
+        run: go test -race -count=1 -v ./...
 
       - name: Test (non-GUI packages)
         if: "!matrix.test-all"
+        shell: bash
         run: |
-          go test -v ./internal/math3d/... ./internal/physics/... ./internal/launch/... ./internal/validation/... ./pkg/...
+          go test -count=1 -v $(go list ./... | grep -v 'internal/ui')
 
-      - name: Build
+      - name: Validate assets
         if: matrix.test-all
+        shell: bash
+        run: |
+          if [ -d "assets/textures" ]; then
+            echo "Asset directory found"
+            ls assets/textures/
+          else
+            echo "Note: assets/textures not found (textures are optional for build)"
+          fi
+
+      - name: Build all packages
         run: go build ./...
+
+      - name: Build unified binary
+        shell: bash
+        run: |
+          go build -o /dev/null ./cmd/solar-sim
