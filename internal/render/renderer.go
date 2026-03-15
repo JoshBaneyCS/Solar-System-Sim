@@ -46,6 +46,12 @@ type Renderer struct {
 	// Belt renderer
 	BeltRenderer *BeltRenderer
 
+	// Trail buffer for image-based trail rendering
+	trailBuffer *TrailBuffer
+
+	// Persistent scene container to avoid per-frame allocation
+	sceneContainer *fyne.Container
+
 	// Lighting cache
 	lightingCache    map[string]*image.RGBA // name+size -> shaded image
 	lightingCacheMu  sync.Mutex
@@ -66,6 +72,7 @@ func NewRenderer(sim *physics.Simulator, vp *viewport.ViewPort) *Renderer {
 		ShowLabels:        true,
 		ShowBelt:          true,
 		BeltRenderer:      NewBeltRenderer(physics.GenerateBeltParticles(1500), cache),
+		trailBuffer:       NewTrailBuffer(),
 		lightingCache:     make(map[string]*image.RGBA),
 	}
 
@@ -117,63 +124,29 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 		objects = append(objects, spacetimeObjects...)
 	}
 
-	// Render asteroid belt particles
+	// Render asteroid belt particles to image buffer
 	if r.ShowBelt && r.BeltRenderer != nil {
 		r.Simulator.RLock()
 		simTime := r.Simulator.CurrentTime
 		r.Simulator.RUnlock()
-		objects = append(objects, r.BeltRenderer.Render(r.Viewport, simTime)...)
+		beltImg := r.BeltRenderer.RenderToImage(r.Viewport, simTime, canvasWidth, canvasHeight)
+		if beltImg != nil {
+			imgObj := r.Cache.GetImage(beltImg)
+			imgObj.FillMode = canvas.ImageFillOriginal
+			imgObj.Resize(fyne.NewSize(float32(canvasWidth), float32(canvasHeight)))
+			imgObj.Move(fyne.NewPos(0, 0))
+			objects = append(objects, imgObj)
+		}
 	}
 
 	if showTrails {
-		for _, planet := range planets {
-			if len(planet.Trail) > 1 {
-				step := 1
-				if len(planet.Trail) > 200 {
-					step = len(planet.Trail) / 200
-				}
-
-				for j := 0; j < len(planet.Trail)-step; j += step {
-					i0 := j - step
-					if i0 < 0 {
-						i0 = 0
-					}
-					i1 := j
-					i2 := j + step
-					i3 := j + 2*step
-					if i3 >= len(planet.Trail) {
-						i3 = len(planet.Trail) - 1
-					}
-					p0 := planet.Trail[i0]
-					p1 := planet.Trail[i1]
-					p2 := planet.Trail[i2]
-					p3 := planet.Trail[i3]
-
-					alpha := uint8(float64(j) / float64(len(planet.Trail)) * 255)
-					lineColor := planet.Color
-					if c, ok := planet.Color.(color.RGBA); ok {
-						lineColor = color.RGBA{c.R, c.G, c.B, alpha}
-					}
-
-					const nSub = 4
-					prevX, prevY := r.Viewport.WorldToScreen(p1)
-					for k := 1; k <= nSub; k++ {
-						t := float64(k) / float64(nSub)
-						pt := math3d.CatmullRom(p0, p1, p2, p3, t)
-						curX, curY := r.Viewport.WorldToScreen(pt)
-
-						if r.isOnScreen(prevX, prevY, canvasWidth, canvasHeight) ||
-							r.isOnScreen(curX, curY, canvasWidth, canvasHeight) {
-							line := r.Cache.GetLine(lineColor)
-							line.Position1 = fyne.NewPos(prevX, prevY)
-							line.Position2 = fyne.NewPos(curX, curY)
-							line.StrokeWidth = 1
-							objects = append(objects, line)
-						}
-						prevX, prevY = curX, curY
-					}
-				}
-			}
+		trailImg := r.trailBuffer.Render(planets, r.Viewport, canvasWidth, canvasHeight)
+		if trailImg != nil {
+			imgObj := r.Cache.GetImage(trailImg)
+			imgObj.FillMode = canvas.ImageFillOriginal
+			imgObj.Resize(fyne.NewSize(float32(canvasWidth), float32(canvasHeight)))
+			imgObj.Move(fyne.NewPos(0, 0))
+			objects = append(objects, imgObj)
 		}
 	}
 
@@ -341,7 +314,12 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 		objects = append(objects, distLabel)
 	}
 
-	return container.NewWithoutLayout(objects...)
+	if r.sceneContainer == nil {
+		r.sceneContainer = container.NewWithoutLayout(objects...)
+	} else {
+		r.sceneContainer.Objects = objects
+	}
+	return r.sceneContainer
 }
 
 // getShadedPlanetImage returns a cached or freshly-shaded planet texture.

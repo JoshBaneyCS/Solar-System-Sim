@@ -566,6 +566,9 @@ func (a *App) Run() {
 		}
 	}()
 
+	// Start physics on its own goroutine — decoupled from rendering
+	a.simulator.StartPhysicsLoop(constants.BaseTimeStep)
+
 	go func() {
 		ticker := time.NewTicker(16 * time.Millisecond)
 		var lastFrameOver bool // true if previous frame exceeded budget
@@ -577,11 +580,14 @@ func (a *App) Run() {
 				continue
 			}
 
+			// Read snapshot — never blocks, no lock contention
+			snap := a.simulator.GetSnapshot()
+			if snap == nil {
+				continue
+			}
+
 			// Adaptive rate: when paused, only render every 4th tick (4 FPS)
-			a.simulator.RLock()
-			isPlaying := a.simulator.IsPlaying
-			a.simulator.RUnlock()
-			if !isPlaying {
+			if !snap.IsPlaying {
 				pausedFrameSkip++
 				if pausedFrameSkip < 4 {
 					continue
@@ -593,14 +599,11 @@ func (a *App) Run() {
 
 			frameStart := time.Now()
 
-			a.simulator.Update(constants.BaseTimeStep)
-
 			// Update launch trajectory on renderer
 			a.renderer.LaunchTrajectory = a.launch.GetTrajectory()
 			if a.renderer.LaunchTrajectory != nil {
-				planets := a.simulator.GetPlanetSnapshot()
-				if len(planets) > 2 {
-					a.renderer.LaunchEarthPos = planets[2].Position
+				if len(snap.Planets) > 2 {
+					a.renderer.LaunchEarthPos = snap.Planets[2].Position
 				}
 			}
 
@@ -611,12 +614,9 @@ func (a *App) Run() {
 				a.renderer.LaunchVehiclePos = &worldPos
 			}
 
-			// Update status bar
-			a.simulator.RLock()
-			simDays := a.simulator.CurrentTime / 86400
-			simSpeed := a.simulator.TimeSpeed
-			a.simulator.RUnlock()
-			a.statusBar.Update(simDays, simSpeed, a.viewport.Zoom)
+			// Update status bar from snapshot (no lock needed)
+			simDays := snap.CurrentTime / 86400
+			a.statusBar.Update(simDays, snap.TimeSpeed, a.viewport.Zoom)
 			a.statusBar.IncrementFrame()
 
 			if a.useGPU && a.gpuRenderer != nil {

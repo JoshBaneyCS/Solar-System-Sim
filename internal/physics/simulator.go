@@ -4,11 +4,24 @@ import (
 	"image/color"
 	"math"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"solar-system-sim/internal/math3d"
 	"solar-system-sim/internal/physics/gr"
 	"solar-system-sim/pkg/constants"
 )
+
+// SimSnapshot is a read-only snapshot of the simulation state.
+// It is produced by the physics goroutine and consumed by the render loop
+// via an atomic pointer swap, eliminating lock contention.
+type SimSnapshot struct {
+	Planets     []Body
+	Sun         Body
+	CurrentTime float64
+	TimeSpeed   float64
+	IsPlaying   bool
+}
 
 // MaxSafeDt is the maximum integration timestep (seconds) before substep subdivision.
 // At 8 hours, Mercury gets ~264 steps/orbit even at max TimeSpeed.
@@ -87,6 +100,8 @@ type Simulator struct {
 	ShowAsteroids        bool
 	mu                   sync.RWMutex
 	scratch              *rk4Scratch
+	latestSnapshot       atomic.Pointer[SimSnapshot]
+	stopCh               chan struct{}
 }
 
 // RLock acquires a read lock on the simulator mutex.
@@ -546,5 +561,81 @@ func (s *Simulator) GetSunSnapshot() Body {
 		Velocity: s.Sun.Velocity,
 		Color:    s.Sun.Color,
 		Radius:   s.Sun.Radius,
+	}
+}
+
+// publishSnapshot builds an immutable snapshot and stores it atomically.
+// Must be called while holding s.mu (read or write lock).
+func (s *Simulator) publishSnapshot() {
+	snap := &SimSnapshot{
+		Planets: make([]Body, len(s.Planets)),
+		Sun: Body{
+			Name:     s.Sun.Name,
+			Mass:     s.Sun.Mass,
+			Position: s.Sun.Position,
+			Velocity: s.Sun.Velocity,
+			Color:    s.Sun.Color,
+			Radius:   s.Sun.Radius,
+		},
+		CurrentTime: s.CurrentTime,
+		TimeSpeed:   s.TimeSpeed,
+		IsPlaying:   s.IsPlaying,
+	}
+	for i := range s.Planets {
+		snap.Planets[i] = Body{
+			Name:           s.Planets[i].Name,
+			Mass:           s.Planets[i].Mass,
+			Position:       s.Planets[i].Position,
+			Velocity:       s.Planets[i].Velocity,
+			Color:          s.Planets[i].Color,
+			Radius:         s.Planets[i].Radius,
+			Trail:          make([]math3d.Vec3, len(s.Planets[i].Trail)),
+			ShowTrail:      s.Planets[i].ShowTrail,
+			Type:           s.Planets[i].Type,
+			PhysicalRadius: s.Planets[i].PhysicalRadius,
+		}
+		copy(snap.Planets[i].Trail, s.Planets[i].Trail)
+	}
+	s.latestSnapshot.Store(snap)
+}
+
+// GetSnapshot returns the latest simulation snapshot without any locking.
+// Returns nil if no snapshot has been published yet.
+func (s *Simulator) GetSnapshot() *SimSnapshot {
+	return s.latestSnapshot.Load()
+}
+
+// StartPhysicsLoop launches a background goroutine that steps the simulation
+// at ~60Hz. The render loop should use GetSnapshot() instead of calling Update().
+func (s *Simulator) StartPhysicsLoop(dt float64) {
+	s.stopCh = make(chan struct{})
+
+	// Publish initial snapshot
+	s.mu.RLock()
+	s.publishSnapshot()
+	s.mu.RUnlock()
+
+	go func() {
+		ticker := time.NewTicker(16 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-s.stopCh:
+				return
+			case <-ticker.C:
+				s.Update(dt)
+				// Publish snapshot after step (lock is released by Update)
+				s.mu.RLock()
+				s.publishSnapshot()
+				s.mu.RUnlock()
+			}
+		}
+	}()
+}
+
+// StopPhysicsLoop stops the background physics goroutine.
+func (s *Simulator) StopPhysicsLoop() {
+	if s.stopCh != nil {
+		close(s.stopCh)
 	}
 }

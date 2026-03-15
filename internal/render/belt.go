@@ -1,10 +1,9 @@
 package render
 
 import (
+	"image"
 	"image/color"
 	"math"
-
-	"fyne.io/fyne/v2"
 
 	"solar-system-sim/internal/math3d"
 	"solar-system-sim/internal/physics"
@@ -14,62 +13,101 @@ import (
 
 // BeltRenderer handles visual rendering of asteroid belt particles.
 // These are NOT N-body simulated — positions are computed from Keplerian elements.
+// Renders particles to an image buffer instead of individual Fyne objects.
 type BeltRenderer struct {
 	particles []physics.BeltParticle
-	cache     *RenderCache
+	img       *image.RGBA
+	width     int
+	height    int
 }
 
 // NewBeltRenderer creates a belt renderer with the given particle data.
 func NewBeltRenderer(particles []physics.BeltParticle, cache *RenderCache) *BeltRenderer {
 	return &BeltRenderer{
 		particles: particles,
-		cache:     cache,
 	}
 }
 
-// Render computes belt particle positions and returns canvas objects.
-func (br *BeltRenderer) Render(vp *viewport.ViewPort, simTime float64) []fyne.CanvasObject {
-	objects := make([]fyne.CanvasObject, 0, len(br.particles))
+// Precomputed belt colors (RGBA values)
+var beltColors = []color.RGBA{
+	{140, 130, 115, 180}, // gray
+	{160, 145, 120, 170}, // tan
+	{120, 110, 100, 190}, // dark gray
+	{170, 155, 130, 160}, // light brown
+	{130, 120, 110, 175}, // medium gray
+}
 
-	vp.RLock()
-	canvasWidth := vp.CanvasWidth
-	canvasHeight := vp.CanvasHeight
-	vp.RUnlock()
-
-	// Precompute a palette of belt colors for variety
-	beltColors := []color.RGBA{
-		{140, 130, 115, 180}, // gray
-		{160, 145, 120, 170}, // tan
-		{120, 110, 100, 190}, // dark gray
-		{170, 155, 130, 160}, // light brown
-		{130, 120, 110, 175}, // medium gray
+// RenderToImage computes belt particle positions and draws them into an image buffer.
+func (br *BeltRenderer) RenderToImage(vp *viewport.ViewPort, simTime float64, canvasWidth, canvasHeight float64) *image.RGBA {
+	w := int(canvasWidth)
+	h := int(canvasHeight)
+	if w <= 0 || h <= 0 {
+		return nil
 	}
+
+	// Resize buffer if needed
+	if br.img == nil || br.width != w || br.height != h {
+		br.img = image.NewRGBA(image.Rect(0, 0, w, h))
+		br.width = w
+		br.height = h
+	} else {
+		// Clear buffer
+		for i := range br.img.Pix {
+			br.img.Pix[i] = 0
+		}
+	}
+
+	pix := br.img.Pix
+	stride := br.img.Stride
 
 	for i, p := range br.particles {
 		pos := beltParticlePosition(p, simTime)
 		x, y := vp.WorldToScreen(pos)
 
 		// Skip off-screen particles
-		if x < -10 || x > float32(canvasWidth)+10 || y < -10 || y > float32(canvasHeight)+10 {
+		ix := int(x)
+		iy := int(y)
+		if ix < 0 || ix >= w || iy < 0 || iy >= h {
 			continue
 		}
 
 		c := beltColors[i%len(beltColors)]
-		dot := br.cache.GetCircle(c)
-		// Vary size: most are 1-2px, some are 3px
-		size := float32(1)
+
+		// Vary size: most are 1px, some are 2px
+		size := 1
 		if i%3 == 0 {
 			size = 2
 		}
 		if i%17 == 0 {
 			size = 3
 		}
-		dot.Resize(fyne.NewSize(size, size))
-		dot.Move(fyne.NewPos(x-size/2, y-size/2))
-		objects = append(objects, dot)
+
+		// Draw dot directly into pixel buffer
+		for dy := 0; dy < size; dy++ {
+			py := iy + dy
+			if py >= h {
+				break
+			}
+			rowOff := py * stride
+			for dx := 0; dx < size; dx++ {
+				px := ix + dx
+				if px >= w {
+					break
+				}
+				off := rowOff + px*4
+				// Simple alpha blend
+				existA := pix[off+3]
+				if existA == 0 {
+					pix[off+0] = c.R
+					pix[off+1] = c.G
+					pix[off+2] = c.B
+					pix[off+3] = c.A
+				}
+			}
+		}
 	}
 
-	return objects
+	return br.img
 }
 
 // beltParticlePosition computes the 2D heliocentric position of a belt particle
