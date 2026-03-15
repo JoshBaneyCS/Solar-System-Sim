@@ -40,9 +40,9 @@ const (
 	displacementFactor         = 50.0
 	maxInfluenceDistance       = 10.0 * constants.AU
 	cacheInvalidationThreshold = 0.05
-	minGridResolution    = 40
-	maxGridResolution    = 120
-	baseCurvatureFactor  = 1e11
+	minGridResolution          = 40
+	maxGridResolution          = 120
+	baseCurvatureFactor        = 1e11
 )
 
 func NewSpacetimeRenderer() *SpacetimeRenderer {

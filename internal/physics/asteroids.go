@@ -142,7 +142,7 @@ func GenerateBeltParticles(count int) []BeltParticle {
 		}
 		particles[i] = BeltParticle{
 			SemiMajorAxis:  a,
-			Eccentricity:   rng.Float64() * 0.15,               // 0 to 0.15
+			Eccentricity:   rng.Float64() * 0.15,                       // 0 to 0.15
 			Inclination:    (rng.Float64()*2 - 1) * 20 * math.Pi / 180, // -20 to +20 deg
 			InitialAnomaly: rng.Float64() * 2 * math.Pi,
 		}

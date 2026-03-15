@@ -22,11 +22,11 @@ func (a *App) showAboutWindow() {
 	author := widget.NewLabel("Author: Joshua Baney")
 	author.Alignment = fyne.TextAlignCenter
 
-	repoURL, _ := url.Parse("https://github.com/joshbaney/solar-system-simulator")
+	repoURL, _ := url.Parse("https://github.com/JoshBaneyCS/Solar-System-Sim")
 	repoLink := widget.NewHyperlink("GitHub Repository", repoURL)
 	repoLink.Alignment = fyne.TextAlignCenter
 
-	donateURL, _ := url.Parse("https://github.com/sponsors/joshbaney")
+	donateURL, _ := url.Parse("https://www.paypal.com/donate/?business=HWM2DENMWG4K2&no_recurring=0&item_name=TO+continue+funding+ongoing+development+to+Solar+System+Simulator+-+An+open+source+Physics+application&currency_code=USD")
 	donateLink := widget.NewHyperlink("Sponsor / Donate", donateURL)
 	donateLink.Alignment = fyne.TextAlignCenter
 
