@@ -5,12 +5,23 @@ import (
 	"net/url"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 )
 
 func (a *App) showAboutWindow() {
 	w := a.fyneApp.NewWindow("About Solar System Simulator")
+
+	// Show app logo if available
+	var logoContainer *fyne.Container
+	if icon := a.fyneApp.Icon(); icon != nil {
+		logo := canvas.NewImageFromResource(icon)
+		logo.SetMinSize(fyne.NewSize(128, 128))
+		logo.FillMode = canvas.ImageFillContain
+		logoContainer = container.New(layout.NewCenterLayout(), logo)
+	}
 
 	title := widget.NewLabel("Solar System Simulator")
 	title.TextStyle = fyne.TextStyle{Bold: true}
@@ -32,18 +43,32 @@ func (a *App) showAboutWindow() {
 
 	// System information
 	ri := a.runtimeInfo
-	sysInfo := widget.NewLabel(fmt.Sprintf(
+	sysText := fmt.Sprintf(
 		"System Information:\n\n"+
 			"Platform: %s/%s\n"+
 			"CPU Cores: %d\n"+
 			"Go Version: %s\n"+
 			"GPU Backend: %s",
-		ri.OS, ri.Arch, ri.NumCPU, ri.GoVersion, ri.GPUBackend()))
-	sysInfo.Wrapping = fyne.TextWrapWord
+		ri.OS, ri.Arch, ri.NumCPU, ri.GoVersion, ri.GPUBackend())
+
+	if ri.GPUDevice != "" {
+		sysText += fmt.Sprintf("\nGPU: %s", ri.GPUDevice)
+		sysText += fmt.Sprintf("\nGPU Vendor: %s", ri.GPUVendor)
+		sysText += fmt.Sprintf("\nGPU Type: %s", ri.GPUDeviceType)
+		if ri.GPUTier != "" {
+			sysText += fmt.Sprintf("\nPerformance Tier: %s", ri.GPUTier)
+		}
+		if ri.GPUMaxTexture > 0 {
+			sysText += fmt.Sprintf("\nMax Texture Size: %d", ri.GPUMaxTexture)
+		}
+	}
 
 	if ri.IsAppleSilicon {
-		sysInfo.SetText(sysInfo.Text + "\nApple Silicon: Yes (Metal supported)")
+		sysText += "\nApple Silicon: Yes (Metal supported)"
 	}
+
+	sysInfo := widget.NewLabel(sysText)
+	sysInfo.Wrapping = fyne.TextWrapWord
 
 	credits := widget.NewLabel(
 		"Credits & Acknowledgements:\n\n" +
@@ -55,7 +80,11 @@ func (a *App) showAboutWindow() {
 			"License: MIT")
 	credits.Wrapping = fyne.TextWrapWord
 
-	content := container.NewVBox(
+	contentItems := []fyne.CanvasObject{}
+	if logoContainer != nil {
+		contentItems = append(contentItems, logoContainer)
+	}
+	contentItems = append(contentItems,
 		title,
 		version,
 		widget.NewSeparator(),
@@ -67,6 +96,7 @@ func (a *App) showAboutWindow() {
 		widget.NewSeparator(),
 		credits,
 	)
+	content := container.NewVBox(contentItems...)
 
 	scroll := container.NewVScroll(content)
 	scroll.SetMinSize(fyne.NewSize(380, 450))

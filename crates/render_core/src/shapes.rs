@@ -44,12 +44,43 @@ impl CircleVertex {
 }
 
 /// Generate 6 vertices (2 triangles) for a circle quad.
-pub fn make_circle_vertices(cx: f32, cy: f32, radius: f32, color: [f32; 4], texture_index: i32) -> [CircleVertex; 6] {
+#[inline]
+pub fn make_circle_vertices(
+    cx: f32,
+    cy: f32,
+    radius: f32,
+    color: [f32; 4],
+    texture_index: i32,
+) -> [CircleVertex; 6] {
     let r = radius + 2.0; // extra margin for anti-aliasing
-    let tl = CircleVertex { position: [cx - r, cy - r], center: [cx, cy], radius, color, texture_index };
-    let tr = CircleVertex { position: [cx + r, cy - r], center: [cx, cy], radius, color, texture_index };
-    let bl = CircleVertex { position: [cx - r, cy + r], center: [cx, cy], radius, color, texture_index };
-    let br = CircleVertex { position: [cx + r, cy + r], center: [cx, cy], radius, color, texture_index };
+    let tl = CircleVertex {
+        position: [cx - r, cy - r],
+        center: [cx, cy],
+        radius,
+        color,
+        texture_index,
+    };
+    let tr = CircleVertex {
+        position: [cx + r, cy - r],
+        center: [cx, cy],
+        radius,
+        color,
+        texture_index,
+    };
+    let bl = CircleVertex {
+        position: [cx - r, cy + r],
+        center: [cx, cy],
+        radius,
+        color,
+        texture_index,
+    };
+    let br = CircleVertex {
+        position: [cx + r, cy + r],
+        center: [cx, cy],
+        radius,
+        color,
+        texture_index,
+    };
     [tl, tr, bl, tr, br, bl]
 }
 

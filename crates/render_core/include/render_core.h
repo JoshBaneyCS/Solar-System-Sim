@@ -55,4 +55,17 @@ void render_resize(Renderer* h, uint32_t width, uint32_t height);
 
 void render_free(Renderer* h);
 
+/* Hardware detection */
+typedef struct HardwareInfo {
+    char* vendor;
+    char* device_name;
+    char* backend;
+    char* device_type;
+    uint32_t max_texture_size;
+    uint8_t tier;
+} HardwareInfo;
+
+HardwareInfo* render_get_hardware_info(void);
+void render_free_hardware_info(HardwareInfo* info);
+
 #endif

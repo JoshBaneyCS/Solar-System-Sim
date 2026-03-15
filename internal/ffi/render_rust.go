@@ -11,6 +11,44 @@ package ffi
 import "C"
 import "unsafe"
 
+// GPUHardwareInfo contains GPU hardware details detected by the Rust backend.
+type GPUHardwareInfo struct {
+	Vendor     string
+	DeviceName string
+	Backend    string
+	DeviceType string
+	MaxTexture uint32
+	Tier       uint8 // 0=Low, 1=Medium, 2=High
+}
+
+// DetectGPUHardware probes the GPU adapter and returns hardware info.
+// Returns nil if detection fails (no GPU available).
+func DetectGPUHardware() *GPUHardwareInfo {
+	info := C.render_get_hardware_info()
+	if info == nil {
+		return nil
+	}
+	defer C.render_free_hardware_info(info)
+
+	result := &GPUHardwareInfo{
+		MaxTexture: uint32(info.max_texture_size),
+		Tier:       uint8(info.tier),
+	}
+	if info.vendor != nil {
+		result.Vendor = C.GoString(info.vendor)
+	}
+	if info.device_name != nil {
+		result.DeviceName = C.GoString(info.device_name)
+	}
+	if info.backend != nil {
+		result.Backend = C.GoString(info.backend)
+	}
+	if info.device_type != nil {
+		result.DeviceType = C.GoString(info.device_type)
+	}
+	return result
+}
+
 // RustRenderer wraps the Rust render_core GPU renderer handle.
 type RustRenderer struct {
 	handle *C.Renderer

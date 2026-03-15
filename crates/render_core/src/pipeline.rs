@@ -148,56 +148,60 @@ pub struct Pipelines {
 impl Pipelines {
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         // Bind group layout 0: projection uniform
-        let projection_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("projection_bind_group_layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
-        // Bind group layout 1: texture array + sampler (for circle pipeline)
-        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("texture_bind_group_layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
+        let projection_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("projection_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2Array,
-                        multisampled: false,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
                     count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
+                }],
+            });
+
+        // Bind group layout 1: texture array + sampler (for circle pipeline)
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("texture_bind_group_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2Array,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
 
         // Circle pipeline layout: projection + textures
-        let circle_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("circle_pipeline_layout"),
-            bind_group_layouts: &[&projection_bind_group_layout, &texture_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let circle_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("circle_pipeline_layout"),
+                bind_group_layouts: &[&projection_bind_group_layout, &texture_bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
         // Other pipeline layout: projection only
-        let other_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("other_pipeline_layout"),
-            bind_group_layouts: &[&projection_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let other_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("other_pipeline_layout"),
+                bind_group_layouts: &[&projection_bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
         let alpha_blend = wgpu::BlendState {
             color: wgpu::BlendComponent {
@@ -319,6 +323,12 @@ impl Pipelines {
             cache: None,
         });
 
-        Self { circle, glow, line, projection_bind_group_layout, texture_bind_group_layout }
+        Self {
+            circle,
+            glow,
+            line,
+            projection_bind_group_layout,
+            texture_bind_group_layout,
+        }
     }
 }

@@ -22,6 +22,7 @@ type TextureManager struct {
 	textures map[string]image.Image         // planet name -> raw texture
 	circles  map[string]map[int]*image.RGBA // planet name -> size -> circular cutout
 	loaded   bool
+	skybox   image.Image
 }
 
 // NewTextureManager creates a new TextureManager.
@@ -74,6 +75,30 @@ func (tm *TextureManager) LoadAll() error {
 		return fmt.Errorf("no textures loaded from %s", texDir)
 	}
 	return nil
+}
+
+// LoadSkybox loads the skybox/milky_way.jpg texture for the background.
+func (tm *TextureManager) LoadSkybox() {
+	texDir, err := assets.ResolveTextureDir()
+	if err != nil {
+		return
+	}
+	for _, name := range []string{"milky_way.jpg", "milky_way.png"} {
+		img, err := loadImage(filepath.Join(texDir, "skybox", name))
+		if err == nil {
+			tm.mu.Lock()
+			tm.skybox = img
+			tm.mu.Unlock()
+			return
+		}
+	}
+}
+
+// GetSkybox returns the loaded skybox image, or nil.
+func (tm *TextureManager) GetSkybox() image.Image {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	return tm.skybox
 }
 
 // IsLoaded returns true if textures have been loaded.

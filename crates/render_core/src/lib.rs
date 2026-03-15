@@ -1,8 +1,9 @@
 pub mod camera;
-pub mod shapes;
+pub mod ffi;
+pub mod hardware;
 pub mod pipeline;
-pub mod spacetime;
-pub mod textures;
 pub mod raytracer;
 pub mod renderer;
-pub mod ffi;
+pub mod shapes;
+pub mod spacetime;
+pub mod textures;

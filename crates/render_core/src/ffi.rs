@@ -99,7 +99,12 @@ pub unsafe extern "C" fn render_set_bodies(
             screen_x: sx,
             screen_y: sy,
             radius: rad[i] as f32,
-            color: [col[i * 4] as f32, col[i * 4 + 1] as f32, col[i * 4 + 2] as f32, col[i * 4 + 3] as f32],
+            color: [
+                col[i * 4] as f32,
+                col[i * 4 + 1] as f32,
+                col[i * 4 + 2] as f32,
+                col[i * 4 + 3] as f32,
+            ],
             texture_index: i as i32, // maps to BODY_NAMES[i]
         });
     }
@@ -186,8 +191,14 @@ pub unsafe extern "C" fn render_set_trails(
                 let alpha = j as f32 / len as f32;
                 let color = [base_color[0], base_color[1], base_color[2], alpha];
 
-                vertices.push(LineVertex { position: [x1, y1], color });
-                vertices.push(LineVertex { position: [x2, y2], color });
+                vertices.push(LineVertex {
+                    position: [x1, y1],
+                    color,
+                });
+                vertices.push(LineVertex {
+                    position: [x2, y2],
+                    color,
+                });
 
                 j += step;
             }
@@ -237,8 +248,12 @@ pub unsafe extern "C" fn render_set_spacetime(
 pub unsafe extern "C" fn render_set_distance_line(
     h: *mut Renderer,
     has_line: u8,
-    x1: f64, y1: f64, z1: f64,
-    x2: f64, y2: f64, z2: f64,
+    x1: f64,
+    y1: f64,
+    z1: f64,
+    x2: f64,
+    y2: f64,
+    z2: f64,
 ) {
     let r = unsafe { &mut *h };
     if has_line == 0 {
@@ -247,8 +262,10 @@ pub unsafe extern "C" fn render_set_distance_line(
         let (sx1, sy1) = r.camera.world_to_screen(x1, y1, z1);
         let (sx2, sy2) = r.camera.world_to_screen(x2, y2, z2);
         r.distance_line = Some(DistanceLine {
-            x1: sx1, y1: sy1,
-            x2: sx2, y2: sy2,
+            x1: sx1,
+            y1: sy1,
+            x2: sx2,
+            y2: sy2,
         });
     }
 }

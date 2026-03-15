@@ -65,14 +65,17 @@ func NewRenderer(sim *physics.Simulator, vp *viewport.ViewPort) *Renderer {
 		SelectedBodies:    make([]*physics.Body, 0, 2),
 		ShowLabels:        true,
 		ShowBelt:          true,
-		BeltRenderer:      NewBeltRenderer(physics.GenerateBeltParticles(300), cache),
+		BeltRenderer:      NewBeltRenderer(physics.GenerateBeltParticles(1500), cache),
 		lightingCache:     make(map[string]*image.RGBA),
 	}
 
-	// Try to load textures (non-fatal if assets not found)
-	if err := r.Textures.LoadAll(); err != nil {
-		log.Printf("Textures: %v (using solid colors)", err)
-	}
+	// Load textures asynchronously so startup isn't blocked
+	go func() {
+		if err := r.Textures.LoadAll(); err != nil {
+			log.Printf("Textures: %v (using solid colors)", err)
+		}
+		r.Textures.LoadSkybox()
+	}()
 
 	return r
 }
@@ -96,10 +99,18 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 
 	objects := []fyne.CanvasObject{}
 
-	bg := canvas.NewRectangle(color.RGBA{5, 5, 15, 255})
-	bg.Resize(fyne.NewSize(float32(canvasWidth), float32(canvasHeight)))
-	bg.Move(fyne.NewPos(0, 0))
-	objects = append(objects, bg)
+	if skybox := r.Textures.GetSkybox(); skybox != nil {
+		skyboxImg := canvas.NewImageFromImage(skybox)
+		skyboxImg.Resize(fyne.NewSize(float32(canvasWidth), float32(canvasHeight)))
+		skyboxImg.Move(fyne.NewPos(0, 0))
+		skyboxImg.FillMode = canvas.ImageFillStretch
+		objects = append(objects, skyboxImg)
+	} else {
+		bg := canvas.NewRectangle(color.RGBA{5, 5, 15, 255})
+		bg.Resize(fyne.NewSize(float32(canvasWidth), float32(canvasHeight)))
+		bg.Move(fyne.NewPos(0, 0))
+		objects = append(objects, bg)
+	}
 
 	if showSpacetime {
 		spacetimeObjects := r.SpacetimeRenderer.RenderGrid(r.Cache, r.Viewport, planets, sun)

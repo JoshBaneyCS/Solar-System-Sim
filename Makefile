@@ -191,6 +191,19 @@ package-linux:
 package-windows:
 	@bash packaging/package-windows.sh
 
+# Verify no unexpected runtime dependencies (macOS)
+check-deps:
+	@echo "Checking runtime dependencies..."
+	@if [ -f bin/solar-system-sim ]; then \
+		echo "=== solar-system-sim ===" && \
+		otool -L bin/solar-system-sim 2>/dev/null | grep -v /usr/lib | grep -v /System | grep -v "is not an object" || echo "No non-system deps"; \
+	fi
+	@if [ -f bin/solar-sim ]; then \
+		echo "=== solar-sim ===" && \
+		otool -L bin/solar-sim 2>/dev/null | grep -v /usr/lib | grep -v /System | grep -v "is not an object" || echo "No non-system deps"; \
+	fi
+	@echo "Dependency check complete"
+
 # Help
 help:
 	@echo "Solar System Simulator - Makefile targets:"

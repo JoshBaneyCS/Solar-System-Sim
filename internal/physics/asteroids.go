@@ -71,23 +71,6 @@ var AsteroidData = []Planet{
 		PhysicalRadius:         215e3,
 	},
 
-	// Trans-Neptunian dwarf planets
-	{
-		Name:                   "Pluto",
-		Mass:                   1.303e22,
-		SemiMajorAxis:          39.482,
-		Eccentricity:           0.2488,
-		Inclination:            17.16,
-		LongitudeAscendingNode: 110.299,
-		ArgumentOfPerihelion:   113.834,
-		OrbitalPeriod:          90560,
-		Color:                  color.RGBA{210, 190, 170, 255},
-		DisplayRadius:          3,
-		InitialAnomaly:         0,
-		Type:                   BodyTypeDwarfPlanet,
-		PhysicalRadius:         1.1883e6,
-	},
-
 	// Near-Earth asteroids
 	{
 		Name:                   "Apophis",

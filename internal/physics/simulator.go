@@ -14,6 +14,57 @@ import (
 // At 8 hours, Mercury gets ~264 steps/orbit even at max TimeSpeed.
 const MaxSafeDt = 28800.0
 
+// parallelThreshold is the minimum body count before parallelizing acceleration loops.
+const parallelThreshold = 12
+
+// rk4Scratch holds pre-allocated buffers for RK4 integration to avoid per-step allocations.
+type rk4Scratch struct {
+	pos0, vel0 []math3d.Vec3
+	k1p, k1v   []math3d.Vec3
+	k2p, k2v   []math3d.Vec3
+	k3p, k3v   []math3d.Vec3
+	k4p, k4v   []math3d.Vec3
+	pos2, vel2 []math3d.Vec3
+	pos3, vel3 []math3d.Vec3
+	pos4, vel4 []math3d.Vec3
+	snapshot   []BodyState
+	cap        int
+}
+
+func newRK4Scratch(n int) *rk4Scratch {
+	s := &rk4Scratch{cap: n}
+	s.allocate(n)
+	return s
+}
+
+func (s *rk4Scratch) ensureSize(n int) {
+	if s.cap >= n {
+		return
+	}
+	s.allocate(n)
+}
+
+func (s *rk4Scratch) allocate(n int) {
+	s.pos0 = make([]math3d.Vec3, n)
+	s.vel0 = make([]math3d.Vec3, n)
+	s.k1p = make([]math3d.Vec3, n)
+	s.k1v = make([]math3d.Vec3, n)
+	s.k2p = make([]math3d.Vec3, n)
+	s.k2v = make([]math3d.Vec3, n)
+	s.k3p = make([]math3d.Vec3, n)
+	s.k3v = make([]math3d.Vec3, n)
+	s.k4p = make([]math3d.Vec3, n)
+	s.k4v = make([]math3d.Vec3, n)
+	s.pos2 = make([]math3d.Vec3, n)
+	s.vel2 = make([]math3d.Vec3, n)
+	s.pos3 = make([]math3d.Vec3, n)
+	s.vel3 = make([]math3d.Vec3, n)
+	s.pos4 = make([]math3d.Vec3, n)
+	s.vel4 = make([]math3d.Vec3, n)
+	s.snapshot = make([]BodyState, n)
+	s.cap = n
+}
+
 // Simulator holds the simulation state
 type Simulator struct {
 	Sun                  Body
@@ -35,6 +86,7 @@ type Simulator struct {
 	ShowComets           bool
 	ShowAsteroids        bool
 	mu                   sync.RWMutex
+	scratch              *rk4Scratch
 }
 
 // RLock acquires a read lock on the simulator mutex.
@@ -75,6 +127,8 @@ func NewSimulator() *Simulator {
 	for _, pData := range PlanetData {
 		sim.Planets = append(sim.Planets, sim.CreatePlanetFromElements(pData))
 	}
+
+	sim.scratch = newRK4Scratch(len(sim.Planets))
 
 	initBackend(sim)
 
@@ -189,6 +243,30 @@ func (s *Simulator) CalculateAccelerationWithSnapshot(
 	return totalAccel
 }
 
+// computeAccelerations computes kp (velocity) and kv (acceleration) for all bodies.
+// Parallelizes when body count exceeds parallelThreshold.
+func (s *Simulator) computeAccelerations(n int, positions, velocities []math3d.Vec3, snapshot []BodyState, kp, kv []math3d.Vec3) {
+	for i := 0; i < n; i++ {
+		kp[i] = velocities[i]
+	}
+
+	if n >= parallelThreshold {
+		var wg sync.WaitGroup
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				kv[idx] = s.CalculateAccelerationWithSnapshot(idx, positions[idx], velocities[idx], s.Planets[idx].Mass, s.Planets[idx].Name, snapshot)
+			}(i)
+		}
+		wg.Wait()
+	} else {
+		for i := 0; i < n; i++ {
+			kv[i] = s.CalculateAccelerationWithSnapshot(i, positions[i], velocities[i], s.Planets[i].Mass, s.Planets[i].Name, snapshot)
+		}
+	}
+}
+
 func (s *Simulator) Step(dt float64) {
 	if s.Backend != nil {
 		s.syncBackendConfig()
@@ -216,77 +294,61 @@ func (s *Simulator) Step(dt float64) {
 
 	n := len(s.Planets)
 
-	pos0 := make([]math3d.Vec3, n)
-	vel0 := make([]math3d.Vec3, n)
+	// Ensure scratch buffers are large enough
+	if s.scratch == nil {
+		s.scratch = newRK4Scratch(n)
+	}
+	s.scratch.ensureSize(n)
+	sc := s.scratch
+
+	// Copy current state
 	for i := range s.Planets {
-		pos0[i] = s.Planets[i].Position
-		vel0[i] = s.Planets[i].Velocity
+		sc.pos0[i] = s.Planets[i].Position
+		sc.vel0[i] = s.Planets[i].Velocity
 	}
 
-	k1p := make([]math3d.Vec3, n)
-	k1v := make([]math3d.Vec3, n)
-	snapshot0 := make([]BodyState, n)
-	for i := range s.Planets {
-		snapshot0[i] = BodyState{Position: pos0[i], Velocity: vel0[i]}
-	}
-	for i := range s.Planets {
-		k1p[i] = vel0[i]
-		k1v[i] = s.CalculateAccelerationWithSnapshot(i, pos0[i], vel0[i], s.Planets[i].Mass, s.Planets[i].Name, snapshot0)
-	}
+	halfDt := dt / 2
+	dt6 := dt / 6
 
-	pos2 := make([]math3d.Vec3, n)
-	vel2 := make([]math3d.Vec3, n)
-	k2p := make([]math3d.Vec3, n)
-	k2v := make([]math3d.Vec3, n)
-	snapshot2 := make([]BodyState, n)
-	for i := range s.Planets {
-		pos2[i] = pos0[i].Add(k1p[i].Mul(dt / 2))
-		vel2[i] = vel0[i].Add(k1v[i].Mul(dt / 2))
-		snapshot2[i] = BodyState{Position: pos2[i], Velocity: vel2[i]}
+	// k1
+	for i := 0; i < n; i++ {
+		sc.snapshot[i] = BodyState{Position: sc.pos0[i], Velocity: sc.vel0[i]}
 	}
-	for i := range s.Planets {
-		k2p[i] = vel2[i]
-		k2v[i] = s.CalculateAccelerationWithSnapshot(i, pos2[i], vel2[i], s.Planets[i].Mass, s.Planets[i].Name, snapshot2)
-	}
+	s.computeAccelerations(n, sc.pos0, sc.vel0, sc.snapshot, sc.k1p, sc.k1v)
 
-	pos3 := make([]math3d.Vec3, n)
-	vel3 := make([]math3d.Vec3, n)
-	k3p := make([]math3d.Vec3, n)
-	k3v := make([]math3d.Vec3, n)
-	snapshot3 := make([]BodyState, n)
-	for i := range s.Planets {
-		pos3[i] = pos0[i].Add(k2p[i].Mul(dt / 2))
-		vel3[i] = vel0[i].Add(k2v[i].Mul(dt / 2))
-		snapshot3[i] = BodyState{Position: pos3[i], Velocity: vel3[i]}
+	// k2
+	for i := 0; i < n; i++ {
+		sc.pos2[i] = sc.pos0[i].Add(sc.k1p[i].Mul(halfDt))
+		sc.vel2[i] = sc.vel0[i].Add(sc.k1v[i].Mul(halfDt))
+		sc.snapshot[i] = BodyState{Position: sc.pos2[i], Velocity: sc.vel2[i]}
 	}
-	for i := range s.Planets {
-		k3p[i] = vel3[i]
-		k3v[i] = s.CalculateAccelerationWithSnapshot(i, pos3[i], vel3[i], s.Planets[i].Mass, s.Planets[i].Name, snapshot3)
-	}
+	s.computeAccelerations(n, sc.pos2, sc.vel2, sc.snapshot, sc.k2p, sc.k2v)
 
-	pos4 := make([]math3d.Vec3, n)
-	vel4 := make([]math3d.Vec3, n)
-	k4p := make([]math3d.Vec3, n)
-	k4v := make([]math3d.Vec3, n)
-	snapshot4 := make([]BodyState, n)
-	for i := range s.Planets {
-		pos4[i] = pos0[i].Add(k3p[i].Mul(dt))
-		vel4[i] = vel0[i].Add(k3v[i].Mul(dt))
-		snapshot4[i] = BodyState{Position: pos4[i], Velocity: vel4[i]}
+	// k3
+	for i := 0; i < n; i++ {
+		sc.pos3[i] = sc.pos0[i].Add(sc.k2p[i].Mul(halfDt))
+		sc.vel3[i] = sc.vel0[i].Add(sc.k2v[i].Mul(halfDt))
+		sc.snapshot[i] = BodyState{Position: sc.pos3[i], Velocity: sc.vel3[i]}
 	}
-	for i := range s.Planets {
-		k4p[i] = vel4[i]
-		k4v[i] = s.CalculateAccelerationWithSnapshot(i, pos4[i], vel4[i], s.Planets[i].Mass, s.Planets[i].Name, snapshot4)
-	}
+	s.computeAccelerations(n, sc.pos3, sc.vel3, sc.snapshot, sc.k3p, sc.k3v)
 
+	// k4
+	for i := 0; i < n; i++ {
+		sc.pos4[i] = sc.pos0[i].Add(sc.k3p[i].Mul(dt))
+		sc.vel4[i] = sc.vel0[i].Add(sc.k3v[i].Mul(dt))
+		sc.snapshot[i] = BodyState{Position: sc.pos4[i], Velocity: sc.vel4[i]}
+	}
+	s.computeAccelerations(n, sc.pos4, sc.vel4, sc.snapshot, sc.k4p, sc.k4v)
+
+	// Final RK4 combination
 	for i := range s.Planets {
 		planet := &s.Planets[i]
 
-		planet.Position = pos0[i].Add(
-			k1p[i].Add(k2p[i].Mul(2)).Add(k3p[i].Mul(2)).Add(k4p[i]).Mul(dt / 6),
+		planet.Position = sc.pos0[i].Add(
+			sc.k1p[i].Add(sc.k2p[i].Mul(2)).Add(sc.k3p[i].Mul(2)).Add(sc.k4p[i]).Mul(dt6),
 		)
-		planet.Velocity = vel0[i].Add(
-			k1v[i].Add(k2v[i].Mul(2)).Add(k3v[i].Mul(2)).Add(k4v[i]).Mul(dt / 6),
+		planet.Velocity = sc.vel0[i].Add(
+			sc.k1v[i].Add(sc.k2v[i].Mul(2)).Add(sc.k3v[i].Mul(2)).Add(sc.k4v[i]).Mul(dt6),
 		)
 
 		if s.ShowTrails && s.Planets[i].ShowTrail {

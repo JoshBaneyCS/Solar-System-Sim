@@ -3,9 +3,7 @@ use std::path::Path;
 /// Body names in the order they map to texture array layers.
 /// Indices 0-7 = planets, index 8 = sun.
 pub const BODY_NAMES: &[&str] = &[
-    "mercury", "venus", "earth", "mars",
-    "jupiter", "saturn", "uranus", "neptune",
-    "sun",
+    "mercury", "venus", "earth", "mars", "jupiter", "saturn", "uranus", "neptune", "sun",
 ];
 
 /// Target resolution for all texture array layers.
@@ -165,9 +163,7 @@ impl TextureAtlas {
 /// Load a body's albedo texture, resize to TARGET_WIDTH x TARGET_HEIGHT, return RGBA bytes.
 /// Falls back to a white pixel pattern if the file is missing or unreadable.
 fn load_body_texture(asset_dir: &str, body_name: &str) -> Vec<u8> {
-    let fallback = || -> Vec<u8> {
-        vec![255u8; (TARGET_WIDTH * TARGET_HEIGHT * 4) as usize]
-    };
+    let fallback = || -> Vec<u8> { vec![255u8; (TARGET_WIDTH * TARGET_HEIGHT * 4) as usize] };
 
     // Try .jpg first, then .png
     let base = Path::new(asset_dir).join(body_name);

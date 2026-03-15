@@ -6,10 +6,12 @@ pub struct Vec3 {
 }
 
 impl Vec3 {
+    #[inline]
     pub fn new(x: f64, y: f64, z: f64) -> Self {
         Self { x, y, z }
     }
 
+    #[inline]
     pub fn add(self, other: Self) -> Self {
         Self {
             x: self.x + other.x,
@@ -18,6 +20,7 @@ impl Vec3 {
         }
     }
 
+    #[inline]
     pub fn sub(self, other: Self) -> Self {
         Self {
             x: self.x - other.x,
@@ -26,6 +29,7 @@ impl Vec3 {
         }
     }
 
+    #[inline]
     pub fn mul(self, scalar: f64) -> Self {
         Self {
             x: self.x * scalar,
@@ -34,10 +38,17 @@ impl Vec3 {
         }
     }
 
+    #[inline]
     pub fn magnitude(self) -> f64 {
         (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
     }
 
+    #[inline]
+    pub fn magnitude_sq(self) -> f64 {
+        self.x * self.x + self.y * self.y + self.z * self.z
+    }
+
+    #[inline]
     pub fn normalize(self) -> Self {
         let mag = self.magnitude();
         if mag == 0.0 {
@@ -46,10 +57,12 @@ impl Vec3 {
         self.mul(1.0 / mag)
     }
 
+    #[inline]
     pub fn dot(self, other: Self) -> f64 {
         self.x * other.x + self.y * other.y + self.z * other.z
     }
 
+    #[inline]
     pub fn cross(self, other: Self) -> Self {
         Self {
             x: self.y * other.z - self.z * other.y,

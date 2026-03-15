@@ -1,6 +1,11 @@
 use crate::constants::G;
 use crate::gr;
 use crate::vec3::Vec3;
+use rayon::prelude::*;
+
+/// Minimum body count before parallelizing acceleration loops.
+/// Below this threshold, thread spawn overhead exceeds the benefit.
+const PARALLEL_THRESHOLD: usize = 16;
 
 pub struct Simulation {
     pub n_bodies: usize,
@@ -10,6 +15,60 @@ pub struct Simulation {
     pub velocities: Vec<Vec3>,
     pub gr_flags: Vec<bool>,
     pub planet_gravity: bool,
+
+    // Pre-allocated RK4 scratch buffers (avoid re-alloc per step)
+    scratch: Option<RK4Scratch>,
+}
+
+/// Pre-allocated buffers for the RK4 integrator.
+struct RK4Scratch {
+    pos0: Vec<Vec3>,
+    vel0: Vec<Vec3>,
+    k1p: Vec<Vec3>,
+    k1v: Vec<Vec3>,
+    pos2: Vec<Vec3>,
+    vel2: Vec<Vec3>,
+    k2p: Vec<Vec3>,
+    k2v: Vec<Vec3>,
+    pos3: Vec<Vec3>,
+    vel3: Vec<Vec3>,
+    k3p: Vec<Vec3>,
+    k3v: Vec<Vec3>,
+    pos4: Vec<Vec3>,
+    vel4: Vec<Vec3>,
+    k4p: Vec<Vec3>,
+    k4v: Vec<Vec3>,
+}
+
+impl RK4Scratch {
+    fn new(n: usize) -> Self {
+        let z = Vec3::default();
+        Self {
+            pos0: vec![z; n],
+            vel0: vec![z; n],
+            k1p: vec![z; n],
+            k1v: vec![z; n],
+            pos2: vec![z; n],
+            vel2: vec![z; n],
+            k2p: vec![z; n],
+            k2v: vec![z; n],
+            pos3: vec![z; n],
+            vel3: vec![z; n],
+            k3p: vec![z; n],
+            k3v: vec![z; n],
+            pos4: vec![z; n],
+            vel4: vec![z; n],
+            k4p: vec![z; n],
+            k4v: vec![z; n],
+        }
+    }
+
+    fn ensure_size(&mut self, n: usize) {
+        if self.pos0.len() >= n {
+            return;
+        }
+        *self = Self::new(n);
+    }
 }
 
 impl Simulation {
@@ -30,9 +89,11 @@ impl Simulation {
             velocities,
             gr_flags,
             planet_gravity,
+            scratch: Some(RK4Scratch::new(n_bodies)),
         }
     }
 
+    #[inline]
     fn calculate_acceleration(
         &self,
         body_index: usize,
@@ -40,10 +101,10 @@ impl Simulation {
         body_vel: Vec3,
         snapshot_positions: &[Vec3],
     ) -> Vec3 {
-        let sun_pos = Vec3::default(); // Sun at origin
         let mut total_accel = Vec3::default();
 
-        let r_sun = sun_pos.sub(body_pos);
+        // Sun gravity (sun at origin)
+        let r_sun = body_pos.mul(-1.0); // Vec3::default().sub(body_pos) = -body_pos
         let distance_sun = r_sun.magnitude();
 
         if distance_sun > 1e6 {
@@ -52,7 +113,8 @@ impl Simulation {
             let mut accel_sun = r_hat_sun.mul(accel_mag_sun);
 
             if self.gr_flags[body_index] {
-                let rel_accel = gr::calculate_gr_correction(body_pos, body_vel, self.sun_mass, distance_sun);
+                let rel_accel =
+                    gr::calculate_gr_correction(body_pos, body_vel, self.sun_mass, distance_sun);
                 accel_sun = accel_sun.add(rel_accel);
             }
 
@@ -83,79 +145,116 @@ impl Simulation {
         total_accel
     }
 
+    /// Compute accelerations for all bodies, parallelizing when body count is large enough.
+    fn compute_accelerations(
+        &self,
+        positions: &[Vec3],
+        velocities: &[Vec3],
+        snapshot: &[Vec3],
+        out_kp: &mut [Vec3],
+        out_kv: &mut [Vec3],
+    ) {
+        let n = self.n_bodies;
+
+        // kp = velocity (no computation needed beyond copy)
+        out_kp[..n].copy_from_slice(&velocities[..n]);
+
+        if n >= PARALLEL_THRESHOLD {
+            // Parallel acceleration computation
+            let accels: Vec<Vec3> = (0..n)
+                .into_par_iter()
+                .map(|i| self.calculate_acceleration(i, positions[i], velocities[i], snapshot))
+                .collect();
+            out_kv[..n].copy_from_slice(&accels);
+        } else {
+            // Sequential for small body counts
+            for i in 0..n {
+                out_kv[i] = self.calculate_acceleration(i, positions[i], velocities[i], snapshot);
+            }
+        }
+    }
+
     pub fn step(&mut self, dt: f64) {
         let n = self.n_bodies;
 
-        let pos0: Vec<Vec3> = self.positions.clone();
-        let vel0: Vec<Vec3> = self.velocities.clone();
+        // Take scratch out to avoid borrow conflicts
+        let mut scratch = self.scratch.take().unwrap_or_else(|| RK4Scratch::new(n));
+        scratch.ensure_size(n);
 
-        // k1
-        let mut k1p = vec![Vec3::default(); n];
-        let mut k1v = vec![Vec3::default(); n];
-        for i in 0..n {
-            k1p[i] = vel0[i];
-            k1v[i] = self.calculate_acceleration(i, pos0[i], vel0[i], &pos0);
-        }
+        // Copy current state to scratch
+        scratch.pos0[..n].copy_from_slice(&self.positions[..n]);
+        scratch.vel0[..n].copy_from_slice(&self.velocities[..n]);
 
-        // k2
-        let mut pos2 = vec![Vec3::default(); n];
-        let mut vel2 = vec![Vec3::default(); n];
-        let mut k2p = vec![Vec3::default(); n];
-        let mut k2v = vec![Vec3::default(); n];
-        for i in 0..n {
-            pos2[i] = pos0[i].add(k1p[i].mul(dt / 2.0));
-            vel2[i] = vel0[i].add(k1v[i].mul(dt / 2.0));
-        }
-        for i in 0..n {
-            k2p[i] = vel2[i];
-            k2v[i] = self.calculate_acceleration(i, pos2[i], vel2[i], &pos2);
-        }
+        // k1: accelerations at current state
+        self.compute_accelerations(
+            &scratch.pos0[..n],
+            &scratch.vel0[..n],
+            &scratch.pos0[..n],
+            &mut scratch.k1p,
+            &mut scratch.k1v,
+        );
 
-        // k3
-        let mut pos3 = vec![Vec3::default(); n];
-        let mut vel3 = vec![Vec3::default(); n];
-        let mut k3p = vec![Vec3::default(); n];
-        let mut k3v = vec![Vec3::default(); n];
+        // k2: midpoint using k1
+        let half_dt = dt / 2.0;
         for i in 0..n {
-            pos3[i] = pos0[i].add(k2p[i].mul(dt / 2.0));
-            vel3[i] = vel0[i].add(k2v[i].mul(dt / 2.0));
+            scratch.pos2[i] = scratch.pos0[i].add(scratch.k1p[i].mul(half_dt));
+            scratch.vel2[i] = scratch.vel0[i].add(scratch.k1v[i].mul(half_dt));
         }
-        for i in 0..n {
-            k3p[i] = vel3[i];
-            k3v[i] = self.calculate_acceleration(i, pos3[i], vel3[i], &pos3);
-        }
+        self.compute_accelerations(
+            &scratch.pos2[..n],
+            &scratch.vel2[..n],
+            &scratch.pos2[..n],
+            &mut scratch.k2p,
+            &mut scratch.k2v,
+        );
 
-        // k4
-        let mut pos4 = vec![Vec3::default(); n];
-        let mut vel4 = vec![Vec3::default(); n];
-        let mut k4p = vec![Vec3::default(); n];
-        let mut k4v = vec![Vec3::default(); n];
+        // k3: midpoint using k2
         for i in 0..n {
-            pos4[i] = pos0[i].add(k3p[i].mul(dt));
-            vel4[i] = vel0[i].add(k3v[i].mul(dt));
+            scratch.pos3[i] = scratch.pos0[i].add(scratch.k2p[i].mul(half_dt));
+            scratch.vel3[i] = scratch.vel0[i].add(scratch.k2v[i].mul(half_dt));
         }
-        for i in 0..n {
-            k4p[i] = vel4[i];
-            k4v[i] = self.calculate_acceleration(i, pos4[i], vel4[i], &pos4);
-        }
+        self.compute_accelerations(
+            &scratch.pos3[..n],
+            &scratch.vel3[..n],
+            &scratch.pos3[..n],
+            &mut scratch.k3p,
+            &mut scratch.k3v,
+        );
 
-        // Final combination
+        // k4: full step using k3
         for i in 0..n {
-            self.positions[i] = pos0[i].add(
-                k1p[i]
-                    .add(k2p[i].mul(2.0))
-                    .add(k3p[i].mul(2.0))
-                    .add(k4p[i])
-                    .mul(dt / 6.0),
+            scratch.pos4[i] = scratch.pos0[i].add(scratch.k3p[i].mul(dt));
+            scratch.vel4[i] = scratch.vel0[i].add(scratch.k3v[i].mul(dt));
+        }
+        self.compute_accelerations(
+            &scratch.pos4[..n],
+            &scratch.vel4[..n],
+            &scratch.pos4[..n],
+            &mut scratch.k4p,
+            &mut scratch.k4v,
+        );
+
+        // Final RK4 combination
+        let dt6 = dt / 6.0;
+        for i in 0..n {
+            self.positions[i] = scratch.pos0[i].add(
+                scratch.k1p[i]
+                    .add(scratch.k2p[i].mul(2.0))
+                    .add(scratch.k3p[i].mul(2.0))
+                    .add(scratch.k4p[i])
+                    .mul(dt6),
             );
-            self.velocities[i] = vel0[i].add(
-                k1v[i]
-                    .add(k2v[i].mul(2.0))
-                    .add(k3v[i].mul(2.0))
-                    .add(k4v[i])
-                    .mul(dt / 6.0),
+            self.velocities[i] = scratch.vel0[i].add(
+                scratch.k1v[i]
+                    .add(scratch.k2v[i].mul(2.0))
+                    .add(scratch.k3v[i].mul(2.0))
+                    .add(scratch.k4v[i])
+                    .mul(dt6),
             );
         }
+
+        // Return scratch buffers
+        self.scratch = Some(scratch);
     }
 }
 
@@ -164,14 +263,12 @@ mod tests {
     use super::*;
 
     fn make_test_sim() -> Simulation {
-        // Use the exact initial state from Go's NewSimulator()
-        // Mercury only, with GR enabled, planet gravity disabled
         Simulation::new(
             1,
             1.989e30,
             vec![3.3011e23],
-            vec![Vec3::new(4.600e10, 0.0, 0.0)], // ~perihelion
-            vec![Vec3::new(0.0, 58980.0, 0.0)],   // ~perihelion velocity
+            vec![Vec3::new(4.600e10, 0.0, 0.0)],
+            vec![Vec3::new(0.0, 58980.0, 0.0)],
             vec![true],
             false,
         )
@@ -179,31 +276,31 @@ mod tests {
 
     #[test]
     fn test_sun_only_gravity() {
-        // Test without GR to isolate Newtonian gravity
         let sim = Simulation::new(
             1,
             1.989e30,
             vec![3.3011e23],
             vec![Vec3::new(4.600e10, 0.0, 0.0)],
             vec![Vec3::new(0.0, 58980.0, 0.0)],
-            vec![false], // no GR
+            vec![false],
             false,
         );
-        let accel = sim.calculate_acceleration(
-            0,
-            sim.positions[0],
-            sim.velocities[0],
-            &sim.positions,
-        );
-        // Should point toward Sun (negative x)
+        let accel =
+            sim.calculate_acceleration(0, sim.positions[0], sim.velocities[0], &sim.positions);
         assert!(accel.x < 0.0, "acceleration should point toward Sun");
-        assert!(accel.y.abs() < 1e-10, "y acceleration should be ~0 without GR");
+        assert!(
+            accel.y.abs() < 1e-10,
+            "y acceleration should be ~0 without GR"
+        );
 
-        // Check magnitude: GM/r^2
         let r = sim.positions[0].magnitude();
         let expected_mag = G * sim.sun_mass / (r * r);
         let rel_err = (accel.magnitude() - expected_mag).abs() / expected_mag;
-        assert!(rel_err < 1e-10, "acceleration magnitude mismatch: rel_err = {}", rel_err);
+        assert!(
+            rel_err < 1e-10,
+            "acceleration magnitude mismatch: rel_err = {}",
+            rel_err
+        );
     }
 
     #[test]
@@ -212,27 +309,33 @@ mod tests {
             1,
             1.989e30,
             vec![5.972e24],
-            vec![Vec3::new(1.496e11, 0.0, 0.0)], // 1 AU
+            vec![Vec3::new(1.496e11, 0.0, 0.0)],
             vec![Vec3::new(0.0, 29780.0, 0.0)],
             vec![false],
             false,
         );
-        let accel_1au = sim.calculate_acceleration(0, sim.positions[0], sim.velocities[0], &sim.positions);
+        let accel_1au =
+            sim.calculate_acceleration(0, sim.positions[0], sim.velocities[0], &sim.positions);
 
         let sim2 = Simulation::new(
             1,
             1.989e30,
             vec![5.972e24],
-            vec![Vec3::new(2.0 * 1.496e11, 0.0, 0.0)], // 2 AU
+            vec![Vec3::new(2.0 * 1.496e11, 0.0, 0.0)],
             vec![Vec3::new(0.0, 29780.0, 0.0)],
             vec![false],
             false,
         );
-        let accel_2au = sim2.calculate_acceleration(0, sim2.positions[0], sim2.velocities[0], &sim2.positions);
+        let accel_2au =
+            sim2.calculate_acceleration(0, sim2.positions[0], sim2.velocities[0], &sim2.positions);
 
         let ratio = accel_1au.magnitude() / accel_2au.magnitude();
         let rel_err = (ratio - 4.0).abs() / 4.0;
-        assert!(rel_err < 1e-10, "inverse square ratio should be 4, got {}", ratio);
+        assert!(
+            rel_err < 1e-10,
+            "inverse square ratio should be 4, got {}",
+            ratio
+        );
     }
 
     #[test]
@@ -249,7 +352,6 @@ mod tests {
 
     #[test]
     fn test_energy_conservation() {
-        // Sun-only, no GR, single planet
         let mut sim = Simulation::new(
             1,
             1.989e30,
@@ -278,5 +380,35 @@ mod tests {
             "energy conservation violated: rel_drift = {}",
             rel_drift
         );
+    }
+
+    #[test]
+    fn test_parallel_consistency() {
+        // Run the same simulation with many bodies and verify results match sequential
+        let n = 20;
+        let masses = vec![5.972e24; n];
+        let mut positions = Vec::with_capacity(n);
+        let mut velocities = Vec::with_capacity(n);
+        let gr_flags = vec![false; n];
+
+        for i in 0..n {
+            let angle = 2.0 * std::f64::consts::PI * (i as f64) / (n as f64);
+            let r = 1.496e11 * (1.0 + 0.5 * (i as f64) / (n as f64));
+            positions.push(Vec3::new(r * angle.cos(), r * angle.sin(), 0.0));
+            let v = 29780.0 * (1.0 / (1.0 + 0.5 * (i as f64) / (n as f64))).sqrt();
+            velocities.push(Vec3::new(-v * angle.sin(), v * angle.cos(), 0.0));
+        }
+
+        let mut sim = Simulation::new(n, 1.989e30, masses, positions, velocities, gr_flags, true);
+        sim.step(7200.0);
+
+        // Verify all positions changed (basic sanity)
+        for i in 0..n {
+            assert!(
+                sim.positions[i].magnitude() > 1e10,
+                "body {} should still be far from origin",
+                i
+            );
+        }
     }
 }

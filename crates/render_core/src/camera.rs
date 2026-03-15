@@ -34,11 +34,13 @@ impl Camera {
         }
     }
 
+    #[inline]
     pub fn display_scale(&self) -> f64 {
         DEFAULT_DISPLAY_SCALE * self.zoom
     }
 
     /// Port of viewport.go WorldToScreen — converts 3D world position (meters) to screen pixels.
+    #[inline]
     pub fn world_to_screen(&self, wx: f64, wy: f64, wz: f64) -> (f32, f32) {
         let mut x = wx;
         let mut y = wy;

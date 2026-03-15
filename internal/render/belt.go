@@ -36,9 +36,16 @@ func (br *BeltRenderer) Render(vp *viewport.ViewPort, simTime float64) []fyne.Ca
 	canvasHeight := vp.CanvasHeight
 	vp.RUnlock()
 
-	beltColor := color.RGBA{140, 130, 115, 160}
+	// Precompute a palette of belt colors for variety
+	beltColors := []color.RGBA{
+		{140, 130, 115, 180}, // gray
+		{160, 145, 120, 170}, // tan
+		{120, 110, 100, 190}, // dark gray
+		{170, 155, 130, 160}, // light brown
+		{130, 120, 110, 175}, // medium gray
+	}
 
-	for _, p := range br.particles {
+	for i, p := range br.particles {
 		pos := beltParticlePosition(p, simTime)
 		x, y := vp.WorldToScreen(pos)
 
@@ -47,9 +54,18 @@ func (br *BeltRenderer) Render(vp *viewport.ViewPort, simTime float64) []fyne.Ca
 			continue
 		}
 
-		dot := br.cache.GetCircle(beltColor)
-		dot.Resize(fyne.NewSize(2, 2))
-		dot.Move(fyne.NewPos(x-1, y-1))
+		c := beltColors[i%len(beltColors)]
+		dot := br.cache.GetCircle(c)
+		// Vary size: most are 1-2px, some are 3px
+		size := float32(1)
+		if i%3 == 0 {
+			size = 2
+		}
+		if i%17 == 0 {
+			size = 3
+		}
+		dot.Resize(fyne.NewSize(size, size))
+		dot.Move(fyne.NewPos(x-size/2, y-size/2))
 		objects = append(objects, dot)
 	}
 

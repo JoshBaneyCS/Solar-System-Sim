@@ -1,6 +1,6 @@
 use crate::camera::Camera;
 use crate::pipeline::Pipelines;
-use crate::raytracer::{RayTracer, RTSphere, RTCameraUniform};
+use crate::raytracer::{RTCameraUniform, RTSphere, RayTracer};
 use crate::shapes::{make_circle_vertices, CircleVertex, LineVertex};
 use crate::spacetime::{generate_grid, SpacetimeBody};
 use crate::textures::TextureAtlas;
@@ -25,6 +25,61 @@ pub struct DistanceLine {
     pub y1: f32,
     pub x2: f32,
     pub y2: f32,
+}
+
+/// Persistent GPU vertex buffer with tracked capacity.
+struct PersistentBuffer {
+    buffer: Option<wgpu::Buffer>,
+    capacity: usize, // in bytes
+}
+
+impl PersistentBuffer {
+    fn new() -> Self {
+        Self {
+            buffer: None,
+            capacity: 0,
+        }
+    }
+
+    /// Ensure the buffer can hold `needed_bytes`. Recreates only if too small.
+    fn ensure_capacity(&mut self, device: &wgpu::Device, label: &str, needed_bytes: usize) {
+        if needed_bytes == 0 {
+            return;
+        }
+        if self.capacity >= needed_bytes {
+            return;
+        }
+        // Allocate 1.5x to reduce future re-allocs
+        let alloc_bytes = (needed_bytes * 3 / 2).max(256);
+        self.buffer = Some(device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: alloc_bytes as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        }));
+        self.capacity = alloc_bytes;
+    }
+
+    /// Write data and return a reference to the buffer (if non-empty).
+    fn write<T: bytemuck::Pod>(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        label: &str,
+        data: &[T],
+    ) -> Option<&wgpu::Buffer> {
+        if data.is_empty() {
+            return None;
+        }
+        let bytes = bytemuck::cast_slice(data);
+        self.ensure_capacity(device, label, bytes.len());
+        if let Some(ref buf) = self.buffer {
+            queue.write_buffer(buf, 0, bytes);
+            Some(buf)
+        } else {
+            None
+        }
+    }
 }
 
 pub struct Renderer {
@@ -55,6 +110,13 @@ pub struct Renderer {
     pub show_spacetime: bool,
     pub spacetime_bodies: Vec<SpacetimeBody>,
     pub distance_line: Option<DistanceLine>,
+
+    // Persistent GPU vertex buffers (reused across frames)
+    buf_spacetime: PersistentBuffer,
+    buf_trail: PersistentBuffer,
+    buf_glow: PersistentBuffer,
+    buf_circle: PersistentBuffer,
+    buf_dist_line: PersistentBuffer,
 
     // Ray tracing state
     pub rt_enabled: bool,
@@ -168,6 +230,11 @@ impl Renderer {
             show_spacetime: false,
             spacetime_bodies: Vec::new(),
             distance_line: None,
+            buf_spacetime: PersistentBuffer::new(),
+            buf_trail: PersistentBuffer::new(),
+            buf_glow: PersistentBuffer::new(),
+            buf_circle: PersistentBuffer::new(),
+            buf_dist_line: PersistentBuffer::new(),
             rt_enabled: false,
             rt_frame_count: 0,
             rt_samples_per_frame: 1,
@@ -185,12 +252,18 @@ impl Renderer {
     ) -> (wgpu::Texture, wgpu::TextureView) {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("offscreen_texture"),
-            size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -232,7 +305,8 @@ impl Renderer {
 
         // Update projection
         let matrix = self.camera.ortho_matrix();
-        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&matrix));
+        self.queue
+            .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&matrix));
 
         // Resize RT if active
         if let Some(ref mut rt) = self.raytracer {
@@ -241,8 +315,8 @@ impl Renderer {
     }
 
     fn hash_camera_state(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
         use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
         let mut h = DefaultHasher::new();
         self.camera.zoom.to_bits().hash(&mut h);
         self.camera.pan_x.to_bits().hash(&mut h);
@@ -268,7 +342,11 @@ impl Renderer {
 
     /// Get the texture index for a body, or -1 if no real textures are loaded.
     fn body_texture_index(&self, index: i32) -> i32 {
-        if self.has_real_textures { index } else { -1 }
+        if self.has_real_textures {
+            index
+        } else {
+            -1
+        }
     }
 
     /// Render a frame and return a pointer to RGBA pixel data.
@@ -278,11 +356,14 @@ impl Renderer {
         }
         // Update projection uniform
         let matrix = self.camera.ortho_matrix();
-        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&matrix));
+        self.queue
+            .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&matrix));
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("render_encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("render_encoder"),
+            });
 
         // Collect all vertex data before the render pass
         let spacetime_verts = if self.show_spacetime && !self.spacetime_bodies.is_empty() {
@@ -299,7 +380,10 @@ impl Renderer {
         };
 
         let trail_verts: Vec<LineVertex> = if self.show_trails {
-            self.trails.iter().flat_map(|t| t.vertices.iter().copied()).collect()
+            self.trails
+                .iter()
+                .flat_map(|t| t.vertices.iter().copied())
+                .collect()
         } else {
             Vec::new()
         };
@@ -312,19 +396,32 @@ impl Renderer {
         if let Some(ref sun) = self.sun {
             // Glow quad (larger radius for glow effect)
             let glow_radius = sun.radius * 3.0;
-            let glow_cvs = make_circle_vertices(sun.screen_x, sun.screen_y, glow_radius, sun.color, -1);
+            let glow_cvs =
+                make_circle_vertices(sun.screen_x, sun.screen_y, glow_radius, sun.color, -1);
             glow_verts.extend_from_slice(&glow_cvs);
 
             // Solid sun with texture
             let sun_tex_idx = self.body_texture_index(sun.texture_index);
-            let sun_cvs = make_circle_vertices(sun.screen_x, sun.screen_y, sun.radius, sun.color, sun_tex_idx);
+            let sun_cvs = make_circle_vertices(
+                sun.screen_x,
+                sun.screen_y,
+                sun.radius,
+                sun.color,
+                sun_tex_idx,
+            );
             circle_verts.extend_from_slice(&sun_cvs);
         }
 
         // Planets
         for body in &self.bodies {
             let tex_idx = self.body_texture_index(body.texture_index);
-            let cvs = make_circle_vertices(body.screen_x, body.screen_y, body.radius, body.color, tex_idx);
+            let cvs = make_circle_vertices(
+                body.screen_x,
+                body.screen_y,
+                body.radius,
+                body.color,
+                tex_idx,
+            );
             circle_verts.extend_from_slice(&cvs);
         }
 
@@ -332,82 +429,37 @@ impl Renderer {
         let mut dist_line_verts: Vec<LineVertex> = Vec::new();
         if let Some(ref dl) = self.distance_line {
             let color = [1.0, 1.0, 0.0, 0.706]; // yellow, alpha ~180/255
-            dist_line_verts.push(LineVertex { position: [dl.x1, dl.y1], color });
-            dist_line_verts.push(LineVertex { position: [dl.x2, dl.y2], color });
+            dist_line_verts.push(LineVertex {
+                position: [dl.x1, dl.y1],
+                color,
+            });
+            dist_line_verts.push(LineVertex {
+                position: [dl.x2, dl.y2],
+                color,
+            });
         }
 
-        // Create GPU buffers
-        let spacetime_buf = if !spacetime_verts.is_empty() {
-            Some(self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("spacetime_vb"),
-                size: (spacetime_verts.len() * std::mem::size_of::<LineVertex>()) as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            }))
-        } else {
-            None
-        };
-
-        let trail_buf = if !trail_verts.is_empty() {
-            Some(self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("trail_vb"),
-                size: (trail_verts.len() * std::mem::size_of::<LineVertex>()) as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            }))
-        } else {
-            None
-        };
-
-        let glow_buf = if !glow_verts.is_empty() {
-            Some(self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("glow_vb"),
-                size: (glow_verts.len() * std::mem::size_of::<CircleVertex>()) as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            }))
-        } else {
-            None
-        };
-
-        let circle_buf = if !circle_verts.is_empty() {
-            Some(self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("circle_vb"),
-                size: (circle_verts.len() * std::mem::size_of::<CircleVertex>()) as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            }))
-        } else {
-            None
-        };
-
-        let dist_buf = if !dist_line_verts.is_empty() {
-            Some(self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("dist_line_vb"),
-                size: (dist_line_verts.len() * std::mem::size_of::<LineVertex>()) as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            }))
-        } else {
-            None
-        };
-
-        // Write data to buffers
-        if let Some(ref buf) = spacetime_buf {
-            self.queue.write_buffer(buf, 0, bytemuck::cast_slice(&spacetime_verts));
-        }
-        if let Some(ref buf) = trail_buf {
-            self.queue.write_buffer(buf, 0, bytemuck::cast_slice(&trail_verts));
-        }
-        if let Some(ref buf) = glow_buf {
-            self.queue.write_buffer(buf, 0, bytemuck::cast_slice(&glow_verts));
-        }
-        if let Some(ref buf) = circle_buf {
-            self.queue.write_buffer(buf, 0, bytemuck::cast_slice(&circle_verts));
-        }
-        if let Some(ref buf) = dist_buf {
-            self.queue.write_buffer(buf, 0, bytemuck::cast_slice(&dist_line_verts));
-        }
+        // Write vertex data to persistent GPU buffers (reused across frames)
+        let spacetime_buf = self
+            .buf_spacetime
+            .write(&self.device, &self.queue, "spacetime_vb", &spacetime_verts)
+            .is_some();
+        let trail_buf = self
+            .buf_trail
+            .write(&self.device, &self.queue, "trail_vb", &trail_verts)
+            .is_some();
+        let glow_buf = self
+            .buf_glow
+            .write(&self.device, &self.queue, "glow_vb", &glow_verts)
+            .is_some();
+        let circle_buf = self
+            .buf_circle
+            .write(&self.device, &self.queue, "circle_vb", &circle_verts)
+            .is_some();
+        let dist_buf = self
+            .buf_dist_line
+            .write(&self.device, &self.queue, "dist_line_vb", &dist_line_verts)
+            .is_some();
 
         // Render pass
         {
@@ -432,44 +484,54 @@ impl Renderer {
             });
 
             // 1) Spacetime grid
-            if let Some(ref buf) = spacetime_buf {
-                pass.set_pipeline(&self.pipelines.line);
-                pass.set_bind_group(0, Some(&self.projection_bind_group), &[]);
-                pass.set_vertex_buffer(0, buf.slice(..));
-                pass.draw(0..spacetime_verts.len() as u32, 0..1);
+            if spacetime_buf {
+                if let Some(ref buf) = self.buf_spacetime.buffer {
+                    pass.set_pipeline(&self.pipelines.line);
+                    pass.set_bind_group(0, Some(&self.projection_bind_group), &[]);
+                    pass.set_vertex_buffer(0, buf.slice(..));
+                    pass.draw(0..spacetime_verts.len() as u32, 0..1);
+                }
             }
 
             // 2) Trails
-            if let Some(ref buf) = trail_buf {
-                pass.set_pipeline(&self.pipelines.line);
-                pass.set_bind_group(0, Some(&self.projection_bind_group), &[]);
-                pass.set_vertex_buffer(0, buf.slice(..));
-                pass.draw(0..trail_verts.len() as u32, 0..1);
+            if trail_buf {
+                if let Some(ref buf) = self.buf_trail.buffer {
+                    pass.set_pipeline(&self.pipelines.line);
+                    pass.set_bind_group(0, Some(&self.projection_bind_group), &[]);
+                    pass.set_vertex_buffer(0, buf.slice(..));
+                    pass.draw(0..trail_verts.len() as u32, 0..1);
+                }
             }
 
             // 3) Sun glow (additive blend)
-            if let Some(ref buf) = glow_buf {
-                pass.set_pipeline(&self.pipelines.glow);
-                pass.set_bind_group(0, Some(&self.projection_bind_group), &[]);
-                pass.set_vertex_buffer(0, buf.slice(..));
-                pass.draw(0..glow_verts.len() as u32, 0..1);
+            if glow_buf {
+                if let Some(ref buf) = self.buf_glow.buffer {
+                    pass.set_pipeline(&self.pipelines.glow);
+                    pass.set_bind_group(0, Some(&self.projection_bind_group), &[]);
+                    pass.set_vertex_buffer(0, buf.slice(..));
+                    pass.draw(0..glow_verts.len() as u32, 0..1);
+                }
             }
 
             // 4) Circles (sun solid + planets) with texture sampling
-            if let Some(ref buf) = circle_buf {
-                pass.set_pipeline(&self.pipelines.circle);
-                pass.set_bind_group(0, Some(&self.projection_bind_group), &[]);
-                pass.set_bind_group(1, Some(&self.texture_bind_group), &[]);
-                pass.set_vertex_buffer(0, buf.slice(..));
-                pass.draw(0..circle_verts.len() as u32, 0..1);
+            if circle_buf {
+                if let Some(ref buf) = self.buf_circle.buffer {
+                    pass.set_pipeline(&self.pipelines.circle);
+                    pass.set_bind_group(0, Some(&self.projection_bind_group), &[]);
+                    pass.set_bind_group(1, Some(&self.texture_bind_group), &[]);
+                    pass.set_vertex_buffer(0, buf.slice(..));
+                    pass.draw(0..circle_verts.len() as u32, 0..1);
+                }
             }
 
             // 5) Distance measurement line
-            if let Some(ref buf) = dist_buf {
-                pass.set_pipeline(&self.pipelines.line);
-                pass.set_bind_group(0, Some(&self.projection_bind_group), &[]);
-                pass.set_vertex_buffer(0, buf.slice(..));
-                pass.draw(0..dist_line_verts.len() as u32, 0..1);
+            if dist_buf {
+                if let Some(ref buf) = self.buf_dist_line.buffer {
+                    pass.set_pipeline(&self.pipelines.line);
+                    pass.set_bind_group(0, Some(&self.projection_bind_group), &[]);
+                    pass.set_vertex_buffer(0, buf.slice(..));
+                    pass.draw(0..dist_line_verts.len() as u32, 0..1);
+                }
             }
         }
 
@@ -499,7 +561,12 @@ impl Renderer {
 
         self.queue.submit(std::iter::once(encoder.finish()));
 
-        // Map and read back
+        self.readback_pixels(padded_bpr);
+        &self.pixel_data
+    }
+
+    /// Map the readback buffer and copy pixel data, handling row padding.
+    fn readback_pixels(&mut self, padded_bpr: u32) {
         let buffer_slice = self.readback_buffer.slice(..);
         let (sender, receiver) = std::sync::mpsc::channel();
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
@@ -513,16 +580,21 @@ impl Renderer {
             let unpadded_bpr = (self.width * 4) as usize;
             let padded = padded_bpr as usize;
 
-            for row in 0..self.height as usize {
-                let src_start = row * padded;
-                let dst_start = row * unpadded_bpr;
-                self.pixel_data[dst_start..dst_start + unpadded_bpr]
-                    .copy_from_slice(&data[src_start..src_start + unpadded_bpr]);
+            if padded == unpadded_bpr {
+                // Fast path: no padding, single memcpy
+                let total = unpadded_bpr * self.height as usize;
+                self.pixel_data[..total].copy_from_slice(&data[..total]);
+            } else {
+                // Slow path: strip row padding
+                for row in 0..self.height as usize {
+                    let src_start = row * padded;
+                    let dst_start = row * unpadded_bpr;
+                    self.pixel_data[dst_start..dst_start + unpadded_bpr]
+                        .copy_from_slice(&data[src_start..src_start + unpadded_bpr]);
+                }
             }
         }
         self.readback_buffer.unmap();
-
-        &self.pixel_data
     }
 
     /// Ray-traced render path: RT compute for bodies, then raster overlays.
@@ -552,7 +624,11 @@ impl Renderer {
                 radius: sun.radius,
                 color: sun.color,
                 material: 1, // emissive
-                texture_index: if self.has_real_textures { sun.texture_index } else { -1 },
+                texture_index: if self.has_real_textures {
+                    sun.texture_index
+                } else {
+                    -1
+                },
                 _pad: [0; 2],
             });
         }
@@ -562,12 +638,18 @@ impl Renderer {
                 radius: body.radius,
                 color: body.color,
                 material: 0, // diffuse
-                texture_index: if self.has_real_textures { body.texture_index } else { -1 },
+                texture_index: if self.has_real_textures {
+                    body.texture_index
+                } else {
+                    -1
+                },
                 _pad: [0; 2],
             });
         }
 
-        let sun_screen = self.sun.as_ref()
+        let sun_screen = self
+            .sun
+            .as_ref()
             .map(|s| (s.screen_x, s.screen_y))
             .unwrap_or((self.width as f32 / 2.0, self.height as f32 / 2.0));
 
@@ -584,16 +666,24 @@ impl Renderer {
 
         // Update projection uniform for overlay pass
         let matrix = self.camera.ortho_matrix();
-        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&matrix));
+        self.queue
+            .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&matrix));
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("rt_encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("rt_encoder"),
+            });
 
         // Dispatch RT compute shader with texture atlas
         rt.dispatch(
-            &self.device, &self.queue, &mut encoder, &spheres, &camera_uniform,
-            &self.texture_atlas.view, &self.texture_atlas.sampler,
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &spheres,
+            &camera_uniform,
+            &self.texture_atlas.view,
+            &self.texture_atlas.sampler,
         );
 
         // Copy RT output -> main render texture
@@ -632,7 +722,10 @@ impl Renderer {
         };
 
         let trail_verts: Vec<LineVertex> = if self.show_trails {
-            self.trails.iter().flat_map(|t| t.vertices.iter().copied()).collect()
+            self.trails
+                .iter()
+                .flat_map(|t| t.vertices.iter().copied())
+                .collect()
         } else {
             Vec::new()
         };
@@ -640,8 +733,14 @@ impl Renderer {
         let mut dist_line_verts: Vec<LineVertex> = Vec::new();
         if let Some(ref dl) = self.distance_line {
             let color = [1.0, 1.0, 0.0, 0.706];
-            dist_line_verts.push(LineVertex { position: [dl.x1, dl.y1], color });
-            dist_line_verts.push(LineVertex { position: [dl.x2, dl.y2], color });
+            dist_line_verts.push(LineVertex {
+                position: [dl.x1, dl.y1],
+                color,
+            });
+            dist_line_verts.push(LineVertex {
+                position: [dl.x2, dl.y2],
+                color,
+            });
         }
 
         // Create GPU buffers for overlays
@@ -652,7 +751,8 @@ impl Renderer {
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            self.queue.write_buffer(&buf, 0, bytemuck::cast_slice(&spacetime_verts));
+            self.queue
+                .write_buffer(&buf, 0, bytemuck::cast_slice(&spacetime_verts));
             Some(buf)
         } else {
             None
@@ -665,7 +765,8 @@ impl Renderer {
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            self.queue.write_buffer(&buf, 0, bytemuck::cast_slice(&trail_verts));
+            self.queue
+                .write_buffer(&buf, 0, bytemuck::cast_slice(&trail_verts));
             Some(buf)
         } else {
             None
@@ -678,7 +779,8 @@ impl Renderer {
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            self.queue.write_buffer(&buf, 0, bytemuck::cast_slice(&dist_line_verts));
+            self.queue
+                .write_buffer(&buf, 0, bytemuck::cast_slice(&dist_line_verts));
             Some(buf)
         } else {
             None
@@ -749,28 +851,7 @@ impl Renderer {
 
         self.queue.submit(std::iter::once(encoder.finish()));
 
-        let buffer_slice = self.readback_buffer.slice(..);
-        let (sender, receiver) = std::sync::mpsc::channel();
-        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-            let _ = sender.send(result);
-        });
-        self.device.poll(wgpu::Maintain::Wait);
-        let _ = receiver.recv();
-
-        {
-            let data = buffer_slice.get_mapped_range();
-            let unpadded_bpr = (self.width * 4) as usize;
-            let padded = padded_bpr as usize;
-
-            for row in 0..self.height as usize {
-                let src_start = row * padded;
-                let dst_start = row * unpadded_bpr;
-                self.pixel_data[dst_start..dst_start + unpadded_bpr]
-                    .copy_from_slice(&data[src_start..src_start + unpadded_bpr]);
-            }
-        }
-        self.readback_buffer.unmap();
-
+        self.readback_pixels(padded_bpr);
         self.rt_frame_count += 1;
         &self.pixel_data
     }

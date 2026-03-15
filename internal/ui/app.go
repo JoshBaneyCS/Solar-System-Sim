@@ -41,6 +41,15 @@ type App struct {
 func NewApp() *App {
 	fyneApp := app.NewWithID("com.joshbaney.solar-sim")
 	fyneApp.Settings().SetTheme(&SpaceTheme{})
+
+	// Set app icon from Icon.png (searches common locations)
+	for _, iconPath := range []string{"Icon.png", "media/Image.png"} {
+		if res, err := fyne.LoadResourceFromPath(iconPath); err == nil {
+			fyneApp.SetIcon(res)
+			break
+		}
+	}
+
 	window := fyneApp.NewWindow("Solar System Simulator")
 
 	sim := physics.NewSimulator()
@@ -58,6 +67,8 @@ func NewApp() *App {
 		statusBar:   NewStatusBar(),
 		runtimeInfo: DetectRuntime(),
 	}
+
+	a.detectGPUInfo()
 
 	a.state = NewAppState(sim, a)
 	a.settings = LoadSettings(fyneApp.Preferences())
@@ -557,7 +568,31 @@ func (a *App) Run() {
 
 	go func() {
 		ticker := time.NewTicker(16 * time.Millisecond)
+		var lastFrameOver bool // true if previous frame exceeded budget
+		var pausedFrameSkip int
 		for range ticker.C {
+			// Frame pacing: skip this tick if the previous frame overran
+			if lastFrameOver {
+				lastFrameOver = false
+				continue
+			}
+
+			// Adaptive rate: when paused, only render every 4th tick (4 FPS)
+			a.simulator.RLock()
+			isPlaying := a.simulator.IsPlaying
+			a.simulator.RUnlock()
+			if !isPlaying {
+				pausedFrameSkip++
+				if pausedFrameSkip < 4 {
+					continue
+				}
+				pausedFrameSkip = 0
+			} else {
+				pausedFrameSkip = 0
+			}
+
+			frameStart := time.Now()
+
 			a.simulator.Update(constants.BaseTimeStep)
 
 			// Update launch trajectory on renderer
@@ -592,6 +627,11 @@ func (a *App) Run() {
 			} else {
 				a.canvas.Objects = a.renderer.CreateCanvas().Objects
 				a.canvas.Refresh()
+			}
+
+			// If this frame took longer than the budget, skip next tick
+			if time.Since(frameStart) > 16*time.Millisecond {
+				lastFrameOver = true
 			}
 		}
 	}()

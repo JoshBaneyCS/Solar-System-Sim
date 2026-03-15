@@ -121,8 +121,12 @@ pub fn generate_grid(
     let mut max_p = f64::MIN;
     for row in &potentials {
         for &v in row {
-            if v < min_p { min_p = v; }
-            if v > max_p { max_p = v; }
+            if v < min_p {
+                min_p = v;
+            }
+            if v > max_p {
+                max_p = v;
+            }
         }
     }
     let range = max_p - min_p;
@@ -153,15 +157,23 @@ pub fn generate_grid(
     for j in 0..resolution {
         for i in 0..(resolution - 1) {
             let x1 = i as f32 * screen_spacing_x;
-            let y1 = j as f32 * screen_spacing_y + (potentials[i][j] * effective_displacement) as f32;
+            let y1 =
+                j as f32 * screen_spacing_y + (potentials[i][j] * effective_displacement) as f32;
             let x2 = (i + 1) as f32 * screen_spacing_x;
-            let y2 = j as f32 * screen_spacing_y + (potentials[i + 1][j] * effective_displacement) as f32;
+            let y2 = j as f32 * screen_spacing_y
+                + (potentials[i + 1][j] * effective_displacement) as f32;
 
             let avg = (potentials[i][j] + potentials[i + 1][j]) / 2.0;
             let color = interpolate_color(avg);
 
-            vertices.push(LineVertex { position: [x1, y1], color });
-            vertices.push(LineVertex { position: [x2, y2], color });
+            vertices.push(LineVertex {
+                position: [x1, y1],
+                color,
+            });
+            vertices.push(LineVertex {
+                position: [x2, y2],
+                color,
+            });
         }
     }
 
@@ -169,15 +181,23 @@ pub fn generate_grid(
     for i in 0..resolution {
         for j in 0..(resolution - 1) {
             let x1 = i as f32 * screen_spacing_x;
-            let y1 = j as f32 * screen_spacing_y + (potentials[i][j] * effective_displacement) as f32;
+            let y1 =
+                j as f32 * screen_spacing_y + (potentials[i][j] * effective_displacement) as f32;
             let x2 = i as f32 * screen_spacing_x;
-            let y2 = (j + 1) as f32 * screen_spacing_y + (potentials[i][j + 1] * effective_displacement) as f32;
+            let y2 = (j + 1) as f32 * screen_spacing_y
+                + (potentials[i][j + 1] * effective_displacement) as f32;
 
             let avg = (potentials[i][j] + potentials[i][j + 1]) / 2.0;
             let color = interpolate_color(avg);
 
-            vertices.push(LineVertex { position: [x1, y1], color });
-            vertices.push(LineVertex { position: [x2, y2], color });
+            vertices.push(LineVertex {
+                position: [x1, y1],
+                color,
+            });
+            vertices.push(LineVertex {
+                position: [x2, y2],
+                color,
+            });
         }
     }
 
@@ -209,7 +229,11 @@ mod tests {
 
     #[test]
     fn test_generate_grid_with_sun() {
-        let bodies = vec![SpacetimeBody { x: 0.0, y: 0.0, mass: 1.989e30 }];
+        let bodies = vec![SpacetimeBody {
+            x: 0.0,
+            y: 0.0,
+            mass: 1.989e30,
+        }];
         let verts = generate_grid(800.0, 600.0, 1.0, 0.0, 0.0, &bodies);
         assert!(!verts.is_empty());
         // Should have line vertices for horizontal + vertical grid

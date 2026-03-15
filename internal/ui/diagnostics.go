@@ -12,6 +12,14 @@ type RuntimeInfo struct {
 	IsAppleSilicon bool
 	NumCPU         int
 	GoVersion      string
+
+	// GPU info (populated when rust_render is active)
+	GPUVendor      string
+	GPUDevice      string
+	GPUBackendName string
+	GPUDeviceType  string
+	GPUMaxTexture  uint32
+	GPUTier        string // "High", "Medium", "Low"
 }
 
 // DetectRuntime gathers system information at startup.
@@ -31,12 +39,19 @@ func (ri RuntimeInfo) String() string {
 	if ri.IsAppleSilicon {
 		silicon = " (Apple Silicon)"
 	}
-	return fmt.Sprintf("OS: %s/%s%s | CPUs: %d | Go: %s",
+	s := fmt.Sprintf("OS: %s/%s%s | CPUs: %d | Go: %s",
 		ri.OS, ri.Arch, silicon, ri.NumCPU, ri.GoVersion)
+	if ri.GPUDevice != "" {
+		s += fmt.Sprintf(" | GPU: %s (%s, %s)", ri.GPUDevice, ri.GPUVendor, ri.GPUBackendName)
+	}
+	return s
 }
 
-// GPUBackend returns a description of the expected GPU backend.
+// GPUBackend returns the actual GPU backend if detected, otherwise infers from OS.
 func (ri RuntimeInfo) GPUBackend() string {
+	if ri.GPUBackendName != "" {
+		return ri.GPUBackendName
+	}
 	switch ri.OS {
 	case "darwin":
 		return "Metal"

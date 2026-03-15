@@ -53,6 +53,28 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install mingw -y
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            crates/physics_core/target
+            crates/render_core/target
+          key: ${{ runner.os }}-${{ matrix.goarch }}-rust-${{ hashFiles('crates/*/Cargo.lock', 'crates/*/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.goarch }}-rust-
+
+      - name: Build Rust physics_core
+        run: |
+          cd crates/physics_core && cargo build --release
+
+      - name: Build Rust render_core
+        run: |
+          cd crates/render_core && cargo build --release
+
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
@@ -96,6 +118,28 @@ jobs:
         env:
           GOARCH: ${{ matrix.goarch }}
         run: bash packaging/package-${{ matrix.platform }}.sh
+
+      - name: Bundle Rust shared libraries
+        shell: bash
+        run: |
+          echo "=== Bundling Rust shared libraries ==="
+          STAGING="staging-libs"
+          mkdir -p "$STAGING"
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            # .dylib files for macOS
+            cp -v crates/physics_core/target/release/libphysics_core.dylib "$STAGING/" 2>/dev/null || true
+            cp -v crates/render_core/target/release/librender_core.dylib "$STAGING/" 2>/dev/null || true
+          elif [ "${{ runner.os }}" = "Linux" ]; then
+            # .so files for Linux
+            cp -v crates/physics_core/target/release/libphysics_core.so "$STAGING/" 2>/dev/null || true
+            cp -v crates/render_core/target/release/librender_core.so "$STAGING/" 2>/dev/null || true
+          elif [ "${{ runner.os }}" = "Windows" ]; then
+            # .dll files for Windows
+            cp -v crates/physics_core/target/release/physics_core.dll "$STAGING/" 2>/dev/null || true
+            cp -v crates/render_core/target/release/render_core.dll "$STAGING/" 2>/dev/null || true
+          fi
+          echo "Bundled libraries:"
+          ls -la "$STAGING/" || echo "No libraries to bundle"
 
       - name: Validate package contents
         shell: bash
