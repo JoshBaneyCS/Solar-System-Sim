@@ -41,6 +41,10 @@ type Renderer struct {
 
 	// Display options
 	ShowLabels bool
+	ShowBelt   bool
+
+	// Belt renderer
+	BeltRenderer *BeltRenderer
 
 	// Lighting cache
 	lightingCache    map[string]*image.RGBA // name+size -> shaded image
@@ -51,14 +55,17 @@ type Renderer struct {
 }
 
 func NewRenderer(sim *physics.Simulator, vp *viewport.ViewPort) *Renderer {
+	cache := NewRenderCache()
 	r := &Renderer{
 		Simulator:         sim,
 		Viewport:          vp,
-		Cache:             NewRenderCache(),
+		Cache:             cache,
 		SpacetimeRenderer: spacetime.NewSpacetimeRenderer(),
 		Textures:          NewTextureManager(),
 		SelectedBodies:    make([]*physics.Body, 0, 2),
 		ShowLabels:        true,
+		ShowBelt:          true,
+		BeltRenderer:      NewBeltRenderer(physics.GenerateBeltParticles(300), cache),
 		lightingCache:     make(map[string]*image.RGBA),
 	}
 
@@ -97,6 +104,14 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 	if showSpacetime {
 		spacetimeObjects := r.SpacetimeRenderer.RenderGrid(r.Cache, r.Viewport, planets, sun)
 		objects = append(objects, spacetimeObjects...)
+	}
+
+	// Render asteroid belt particles
+	if r.ShowBelt && r.BeltRenderer != nil {
+		r.Simulator.RLock()
+		simTime := r.Simulator.CurrentTime
+		r.Simulator.RUnlock()
+		objects = append(objects, r.BeltRenderer.Render(r.Viewport, simTime)...)
 	}
 
 	if showTrails {
@@ -203,16 +218,42 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 		}
 	}
 
-	// Render planets
+	// Render planets, moons, comets, and asteroids
+	displayScale := r.Viewport.GetDisplayScale()
 	for _, planet := range planets {
 		x, y := r.Viewport.WorldToScreen(planet.Position)
 
 		if r.isOnScreen(x, y, canvasWidth, canvasHeight) {
+			// Compute display radius: use physical radius when zoomed in enough
 			planetRadius := float32(planet.Radius)
+			if planet.PhysicalRadius > 0 {
+				physPx := float32(planet.PhysicalRadius / constants.AU * displayScale)
+				if physPx > planetRadius {
+					planetRadius = physPx
+				}
+			}
+			if planetRadius > 5000 {
+				planetRadius = 5000
+			}
 			diameter := int(planetRadius * 2)
 
 			rendered := false
-			if r.Textures.IsLoaded() && diameter >= 4 {
+
+			// Asteroids: use irregular shape
+			if planet.Type == physics.BodyTypeAsteroid && diameter >= 4 {
+				seed := int64(len(planet.Name)) * 7919
+				irregImg := r.Textures.GetIrregularImage(planet.Name, diameter, seed)
+				if irregImg != nil {
+					imgObj := r.Cache.GetImage(irregImg)
+					imgObj.Resize(fyne.NewSize(planetRadius*2, planetRadius*2))
+					imgObj.Move(fyne.NewPos(x-planetRadius, y-planetRadius))
+					objects = append(objects, imgObj)
+					rendered = true
+				}
+			}
+
+			// Regular textured rendering for planets, moons, dwarf planets
+			if !rendered && r.Textures.IsLoaded() && diameter >= 4 {
 				shadedImg := r.getShadedPlanetImage(planet.Name, diameter, lighting, planet.Position)
 				if shadedImg != nil {
 					imgObj := r.Cache.GetImage(shadedImg)
@@ -228,6 +269,11 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 				circle.Resize(fyne.NewSize(planetRadius*2, planetRadius*2))
 				circle.Move(fyne.NewPos(x-planetRadius, y-planetRadius))
 				objects = append(objects, circle)
+			}
+
+			// Comet tail: gradient wedge away from Sun
+			if planet.Type == physics.BodyTypeComet && planetRadius >= 2 {
+				objects = append(objects, r.renderCometTail(planet, sun, x, y, canvasWidth, canvasHeight)...)
 			}
 
 			if r.ShowLabels {
@@ -434,6 +480,54 @@ func (r *Renderer) CreateLabelOverlay() *fyne.Container {
 	}
 
 	return container.NewWithoutLayout(objects...)
+}
+
+// renderCometTail draws a gradient tail pointing away from the Sun.
+func (r *Renderer) renderCometTail(comet physics.Body, sun physics.Body, cx, cy float32, canvasWidth, canvasHeight float64) []fyne.CanvasObject {
+	// Direction away from Sun
+	dx := comet.Position.X - sun.Position.X
+	dy := comet.Position.Y - sun.Position.Y
+	dist := math.Sqrt(dx*dx + dy*dy)
+	if dist < 1e6 {
+		return nil
+	}
+	nx := dx / dist
+	ny := dy / dist
+
+	// Tail length in pixels (scaled by distance from Sun — closer = longer tail)
+	distAU := dist / constants.AU
+	tailLenPx := float32(80.0 / (distAU + 0.5))
+	if tailLenPx < 10 {
+		tailLenPx = 10
+	}
+	if tailLenPx > 200 {
+		tailLenPx = 200
+	}
+
+	var objects []fyne.CanvasObject
+	segments := 8
+	for i := 0; i < segments; i++ {
+		t0 := float32(i) / float32(segments)
+		t1 := float32(i+1) / float32(segments)
+
+		x1 := cx + float32(nx)*tailLenPx*t0
+		y1 := cy + float32(ny)*tailLenPx*t0
+		x2 := cx + float32(nx)*tailLenPx*t1
+		y2 := cy + float32(ny)*tailLenPx*t1
+
+		alpha := uint8(float32(180) * (1 - t0))
+		tailColor := color.RGBA{180, 210, 255, alpha}
+
+		line := r.Cache.GetLine(tailColor)
+		line.Position1 = fyne.NewPos(x1, y1)
+		line.Position2 = fyne.NewPos(x2, y2)
+		line.StrokeWidth = float32(3) * (1 - t0)
+		if line.StrokeWidth < 1 {
+			line.StrokeWidth = 1
+		}
+		objects = append(objects, line)
+	}
+	return objects
 }
 
 func (r *Renderer) isOnScreen(x, y float32, width, height float64) bool {

@@ -72,8 +72,8 @@ func (vp *ViewPort) SetZoom(zoom float64) {
 	if zoom < 0.01 {
 		zoom = 0.01
 	}
-	if zoom > 100.0 {
-		zoom = 100.0
+	if zoom > 1e7 {
+		zoom = 1e7
 	}
 	vp.Zoom = zoom
 }
@@ -100,8 +100,8 @@ func (vp *ViewPort) AdjustZoom(factor float64) {
 	if vp.Zoom < 0.01 {
 		vp.Zoom = 0.01
 	}
-	if vp.Zoom > 100.0 {
-		vp.Zoom = 100.0
+	if vp.Zoom > 1e7 {
+		vp.Zoom = 1e7
 	}
 }
 

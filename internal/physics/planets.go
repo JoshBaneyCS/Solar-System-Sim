@@ -19,6 +19,8 @@ var PlanetData = []Planet{
 		Color:                  color.RGBA{169, 169, 169, 255},
 		DisplayRadius:          4,
 		InitialAnomaly:         0,
+		Type:                   BodyTypePlanet,
+		PhysicalRadius:         2.4397e6,
 	},
 	{
 		Name:                   "Venus",
@@ -32,6 +34,8 @@ var PlanetData = []Planet{
 		Color:                  color.RGBA{255, 198, 73, 255},
 		DisplayRadius:          8,
 		InitialAnomaly:         math.Pi / 4,
+		Type:                   BodyTypePlanet,
+		PhysicalRadius:         6.0518e6,
 	},
 	{
 		Name:                   "Earth",
@@ -45,6 +49,8 @@ var PlanetData = []Planet{
 		Color:                  color.RGBA{100, 149, 237, 255},
 		DisplayRadius:          8,
 		InitialAnomaly:         math.Pi / 2,
+		Type:                   BodyTypePlanet,
+		PhysicalRadius:         6.371e6,
 	},
 	{
 		Name:                   "Mars",
@@ -58,6 +64,8 @@ var PlanetData = []Planet{
 		Color:                  color.RGBA{193, 68, 14, 255},
 		DisplayRadius:          6,
 		InitialAnomaly:         3 * math.Pi / 4,
+		Type:                   BodyTypePlanet,
+		PhysicalRadius:         3.3895e6,
 	},
 	{
 		Name:                   "Jupiter",
@@ -71,6 +79,8 @@ var PlanetData = []Planet{
 		Color:                  color.RGBA{216, 202, 157, 255},
 		DisplayRadius:          20,
 		InitialAnomaly:         math.Pi,
+		Type:                   BodyTypePlanet,
+		PhysicalRadius:         6.9911e7,
 	},
 	{
 		Name:                   "Saturn",
@@ -84,6 +94,8 @@ var PlanetData = []Planet{
 		Color:                  color.RGBA{250, 222, 164, 255},
 		DisplayRadius:          18,
 		InitialAnomaly:         5 * math.Pi / 4,
+		Type:                   BodyTypePlanet,
+		PhysicalRadius:         5.8232e7,
 	},
 	{
 		Name:                   "Uranus",
@@ -97,6 +109,8 @@ var PlanetData = []Planet{
 		Color:                  color.RGBA{79, 208, 231, 255},
 		DisplayRadius:          14,
 		InitialAnomaly:         3 * math.Pi / 2,
+		Type:                   BodyTypePlanet,
+		PhysicalRadius:         2.5362e7,
 	},
 	{
 		Name:                   "Neptune",
@@ -110,5 +124,7 @@ var PlanetData = []Planet{
 		Color:                  color.RGBA{63, 84, 186, 255},
 		DisplayRadius:          14,
 		InitialAnomaly:         7 * math.Pi / 4,
+		Type:                   BodyTypePlanet,
+		PhysicalRadius:         2.4622e7,
 	},
 }

@@ -21,6 +21,10 @@ type AppState struct {
 	integrator    physics.IntegratorType
 	timeSpeed     float64
 	isPlaying     bool
+	showMoons     bool
+	showComets    bool
+	showAsteroids bool
+	showBelt      bool
 
 	// Backing references
 	simulator *physics.Simulator
@@ -43,6 +47,10 @@ func NewAppState(sim *physics.Simulator, a *App) *AppState {
 		integrator:    physics.IntegratorVerlet,
 		timeSpeed:     1.0,
 		isPlaying:     true,
+		showMoons:     true,
+		showComets:    false,
+		showAsteroids: false,
+		showBelt:      true,
 	}
 }
 
@@ -195,6 +203,86 @@ func (s *AppState) SetIsPlaying(v bool) {
 	s.notifyListeners()
 }
 
+func (s *AppState) ShowMoons() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.showMoons
+}
+
+func (s *AppState) ShowComets() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.showComets
+}
+
+func (s *AppState) ShowAsteroids() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.showAsteroids
+}
+
+func (s *AppState) ShowBelt() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.showBelt
+}
+
+func (s *AppState) SetShowMoons(v bool) {
+	s.mu.Lock()
+	s.showMoons = v
+	s.simulator.Lock()
+	if v && !s.simulator.ShowMoons {
+		s.simulator.AddMoons()
+	} else if !v && s.simulator.ShowMoons {
+		s.simulator.RemoveBodiesByType(physics.BodyTypeMoon)
+		s.simulator.ShowMoons = false
+	}
+	s.simulator.Unlock()
+	s.mu.Unlock()
+	s.notifyListeners()
+}
+
+func (s *AppState) SetShowComets(v bool) {
+	s.mu.Lock()
+	s.showComets = v
+	s.simulator.Lock()
+	if v && !s.simulator.ShowComets {
+		s.simulator.AddComets()
+	} else if !v && s.simulator.ShowComets {
+		s.simulator.RemoveBodiesByType(physics.BodyTypeComet)
+		s.simulator.ShowComets = false
+	}
+	s.simulator.Unlock()
+	s.mu.Unlock()
+	s.notifyListeners()
+}
+
+func (s *AppState) SetShowAsteroids(v bool) {
+	s.mu.Lock()
+	s.showAsteroids = v
+	s.simulator.Lock()
+	if v && !s.simulator.ShowAsteroids {
+		s.simulator.AddAsteroids()
+	} else if !v && s.simulator.ShowAsteroids {
+		s.simulator.RemoveBodiesByType(physics.BodyTypeAsteroid)
+		s.simulator.RemoveBodiesByType(physics.BodyTypeDwarfPlanet)
+		s.simulator.ShowAsteroids = false
+	}
+	s.simulator.Unlock()
+	s.mu.Unlock()
+	s.notifyListeners()
+}
+
+func (s *AppState) SetShowBelt(v bool) {
+	s.mu.Lock()
+	s.showBelt = v
+	if s.app != nil && s.app.renderer != nil {
+		s.app.renderer.ShowBelt = v
+	}
+	s.mu.Unlock()
+	s.notifyListeners()
+}
+
 // ApplyFromSettings loads settings values into the state and simulator.
 func (s *AppState) ApplyFromSettings(settings Settings) {
 	s.mu.Lock()
@@ -220,8 +308,15 @@ func (s *AppState) ApplyFromSettings(settings Settings) {
 	if s.app != nil {
 		s.app.showLabels = settings.ShowLabels
 		s.app.renderer.ShowLabels = settings.ShowLabels
+		s.app.renderer.ShowBelt = settings.ShowBelt
 	}
 	s.mu.Unlock()
+
+	// Apply body toggles (these use their own locking)
+	s.SetShowMoons(settings.ShowMoons)
+	s.SetShowComets(settings.ShowComets)
+	s.SetShowAsteroids(settings.ShowAsteroids)
+
 	s.notifyListeners()
 }
 
@@ -240,6 +335,10 @@ func (s *AppState) ToSettings() Settings {
 		PlanetGravity: s.planetGravity,
 		Relativity:    s.relativity,
 		Integrator:    intStr,
+		ShowMoons:     s.showMoons,
+		ShowComets:    s.showComets,
+		ShowAsteroids: s.showAsteroids,
+		ShowBelt:      s.showBelt,
 	}
 }
 
@@ -253,6 +352,10 @@ func (s *AppState) ResetToDefaults() {
 	s.SetIntegrator(physics.IntegratorVerlet)
 	s.SetTimeSpeed(1.0)
 	s.SetIsPlaying(true)
+	s.SetShowMoons(true)
+	s.SetShowComets(false)
+	s.SetShowAsteroids(false)
+	s.SetShowBelt(true)
 }
 
 // RebindSimulator rebinds the state to a new simulator (used after reset).

@@ -31,6 +31,9 @@ type Simulator struct {
 	Integrator           IntegratorType
 	SofteningLength      float64
 	Backend              PhysicsBackend
+	ShowMoons            bool
+	ShowComets           bool
+	ShowAsteroids        bool
 	mu                   sync.RWMutex
 }
 
@@ -123,14 +126,16 @@ func (s *Simulator) CreatePlanetFromElements(p Planet) Body {
 	vz := vz2
 
 	return Body{
-		Name:      p.Name,
-		Mass:      p.Mass,
-		Position:  math3d.Vec3{X: x, Y: y, Z: z},
-		Velocity:  math3d.Vec3{X: vx, Y: vy, Z: vz},
-		Color:     p.Color,
-		Radius:    p.DisplayRadius,
-		Trail:     make([]math3d.Vec3, 0, s.maxTrailLen),
-		ShowTrail: true,
+		Name:           p.Name,
+		Mass:           p.Mass,
+		Position:       math3d.Vec3{X: x, Y: y, Z: z},
+		Velocity:       math3d.Vec3{X: vx, Y: vy, Z: vz},
+		Color:          p.Color,
+		Radius:         p.DisplayRadius,
+		Trail:          make([]math3d.Vec3, 0, s.maxTrailLen),
+		ShowTrail:      true,
+		Type:           p.Type,
+		PhysicalRadius: p.PhysicalRadius,
 	}
 }
 
@@ -152,7 +157,7 @@ func (s *Simulator) CalculateAccelerationWithSnapshot(
 		accelMagSun := constants.G * s.SunMass / (distanceSun*distanceSun + s.SofteningLength*s.SofteningLength)
 		accelSun := rHatSun.Mul(accelMagSun)
 
-		if s.RelativisticEffects && bodyName == "Mercury" {
+		if s.RelativisticEffects {
 			relAccel := gr.CalculateGRCorrection(bodyPos, bodyVel, s.SunMass, distanceSun)
 			accelSun = accelSun.Add(relAccel)
 		}
@@ -314,6 +319,115 @@ func (s *Simulator) Update(dt float64) {
 	}
 }
 
+// CreateMoonFromElements converts a moon's orbital elements (relative to parent) to
+// heliocentric position/velocity by computing the orbit around the parent body
+// and adding the parent's heliocentric state.
+func (s *Simulator) CreateMoonFromElements(moon Planet, parent Body) Body {
+	a := moon.SemiMajorAxis * constants.AU // SemiMajorAxis stored in AU
+	e := moon.Eccentricity
+	inc := moon.Inclination * math.Pi / 180
+	Omega := moon.LongitudeAscendingNode * math.Pi / 180
+	omega := moon.ArgumentOfPerihelion * math.Pi / 180
+	nu := moon.InitialAnomaly
+
+	r := a * (1 - e*e) / (1 + e*math.Cos(nu))
+
+	xOrb := r * math.Cos(nu)
+	yOrb := r * math.Sin(nu)
+
+	x1 := xOrb*math.Cos(omega) - yOrb*math.Sin(omega)
+	y1 := xOrb*math.Sin(omega) + yOrb*math.Cos(omega)
+
+	x2 := x1
+	y2 := y1 * math.Cos(inc)
+	z2 := y1 * math.Sin(inc)
+
+	relX := x2*math.Cos(Omega) - y2*math.Sin(Omega)
+	relY := x2*math.Sin(Omega) + y2*math.Cos(Omega)
+	relZ := z2
+
+	GM := constants.G * moon.ParentMass
+	h := math.Sqrt(GM * a * (1 - e*e))
+	muOverH := GM / h
+
+	vxOrb := -muOverH * math.Sin(nu)
+	vyOrb := muOverH * (e + math.Cos(nu))
+
+	vx1 := vxOrb*math.Cos(omega) - vyOrb*math.Sin(omega)
+	vy1 := vxOrb*math.Sin(omega) + vyOrb*math.Cos(omega)
+
+	vx2 := vx1
+	vy2 := vy1 * math.Cos(inc)
+	vz2 := vy1 * math.Sin(inc)
+
+	relVx := vx2*math.Cos(Omega) - vy2*math.Sin(Omega)
+	relVy := vx2*math.Sin(Omega) + vy2*math.Cos(Omega)
+	relVz := vz2
+
+	return Body{
+		Name:           moon.Name,
+		Mass:           moon.Mass,
+		Position:       math3d.Vec3{X: parent.Position.X + relX, Y: parent.Position.Y + relY, Z: parent.Position.Z + relZ},
+		Velocity:       math3d.Vec3{X: parent.Velocity.X + relVx, Y: parent.Velocity.Y + relVy, Z: parent.Velocity.Z + relVz},
+		Color:          moon.Color,
+		Radius:         moon.DisplayRadius,
+		Trail:          make([]math3d.Vec3, 0, s.maxTrailLen),
+		ShowTrail:      true,
+		Type:           moon.Type,
+		PhysicalRadius: moon.PhysicalRadius,
+	}
+}
+
+// AddMoons adds all defined moons to the simulation, computing their initial
+// heliocentric state from their parent body's current position/velocity.
+func (s *Simulator) AddMoons() {
+	for _, moonData := range MoonData {
+		var parent *Body
+		for i := range s.Planets {
+			if s.Planets[i].Name == moonData.ParentName {
+				parent = &s.Planets[i]
+				break
+			}
+		}
+		if parent == nil {
+			continue
+		}
+		s.Planets = append(s.Planets, s.CreateMoonFromElements(moonData, *parent))
+	}
+	s.ShowMoons = true
+}
+
+// AddComets adds all defined comets to the simulation.
+func (s *Simulator) AddComets() {
+	for _, cData := range CometData {
+		body := s.CreatePlanetFromElements(cData)
+		body.Type = BodyTypeComet
+		s.Planets = append(s.Planets, body)
+	}
+	s.ShowComets = true
+}
+
+// AddAsteroids adds all defined named asteroids to the simulation.
+func (s *Simulator) AddAsteroids() {
+	for _, aData := range AsteroidData {
+		body := s.CreatePlanetFromElements(aData)
+		body.Type = aData.Type
+		s.Planets = append(s.Planets, body)
+	}
+	s.ShowAsteroids = true
+}
+
+// RemoveBodiesByType removes all bodies of the given type from the simulation.
+func (s *Simulator) RemoveBodiesByType(t BodyType) {
+	filtered := make([]Body, 0, len(s.Planets))
+	for _, b := range s.Planets {
+		if b.Type != t {
+			filtered = append(filtered, b)
+		}
+	}
+	s.Planets = filtered
+}
+
 func (s *Simulator) SetSunMass(massMultiplier float64) {
 	s.SunMass = s.DefaultMass * massMultiplier
 	s.syncBackendConfig()
@@ -342,14 +456,16 @@ func (s *Simulator) GetPlanetSnapshot() []Body {
 	snapshot := make([]Body, len(s.Planets))
 	for i := range s.Planets {
 		snapshot[i] = Body{
-			Name:      s.Planets[i].Name,
-			Mass:      s.Planets[i].Mass,
-			Position:  s.Planets[i].Position,
-			Velocity:  s.Planets[i].Velocity,
-			Color:     s.Planets[i].Color,
-			Radius:    s.Planets[i].Radius,
-			Trail:     make([]math3d.Vec3, len(s.Planets[i].Trail)),
-			ShowTrail: s.Planets[i].ShowTrail,
+			Name:           s.Planets[i].Name,
+			Mass:           s.Planets[i].Mass,
+			Position:       s.Planets[i].Position,
+			Velocity:       s.Planets[i].Velocity,
+			Color:          s.Planets[i].Color,
+			Radius:         s.Planets[i].Radius,
+			Trail:          make([]math3d.Vec3, len(s.Planets[i].Trail)),
+			ShowTrail:      s.Planets[i].ShowTrail,
+			Type:           s.Planets[i].Type,
+			PhysicalRadius: s.Planets[i].PhysicalRadius,
 		}
 		copy(snapshot[i].Trail, s.Planets[i].Trail)
 	}

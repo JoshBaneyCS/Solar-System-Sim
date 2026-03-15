@@ -28,9 +28,9 @@ func TestSetZoom_Clamping(t *testing.T) {
 	if vp.Zoom != 0.01 {
 		t.Errorf("expected min clamp 0.01, got %f", vp.Zoom)
 	}
-	vp.SetZoom(200)
-	if vp.Zoom != 100.0 {
-		t.Errorf("expected max clamp 100.0, got %f", vp.Zoom)
+	vp.SetZoom(2e7)
+	if vp.Zoom != 1e7 {
+		t.Errorf("expected max clamp 1e7, got %f", vp.Zoom)
 	}
 }
 

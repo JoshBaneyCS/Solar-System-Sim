@@ -40,9 +40,9 @@ const (
 	displacementFactor         = 50.0
 	maxInfluenceDistance       = 10.0 * constants.AU
 	cacheInvalidationThreshold = 0.05
-	minGridResolution          = 40
-	maxGridResolution          = 120
-	curvatureScaleFactor       = 1e11
+	minGridResolution    = 40
+	maxGridResolution    = 120
+	baseCurvatureFactor  = 1e11
 )
 
 func NewSpacetimeRenderer() *SpacetimeRenderer {
@@ -62,6 +62,8 @@ func (s *SpacetimeRenderer) GetAdaptiveResolution(zoom float64) int {
 		return 80
 	} else if zoom < 10.0 {
 		return 100
+	} else if zoom > 20.0 {
+		return 150
 	}
 	return maxGridResolution
 }
@@ -153,7 +155,9 @@ func (s *SpacetimeRenderer) CalculatePotentialField(
 				}
 			}
 
-			potentials[i][j] = curvature * curvatureScaleFactor
+			// Log-scale normalization reveals planetary warping alongside the Sun's
+			scaleFactor := baseCurvatureFactor * (1.0 + zoom*0.5)
+			potentials[i][j] = math.Log1p(curvature * scaleFactor)
 		}
 	}
 
@@ -193,10 +197,13 @@ func (s *SpacetimeRenderer) NormalizePotentials(potentials [][]float64) ([][]flo
 	}
 
 	normalized := make([][]float64, len(potentials))
+	pRange := maxPotential - minPotential
 	for i := range potentials {
 		normalized[i] = make([]float64, len(potentials[i]))
 		for j := range potentials[i] {
-			normalized[i][j] = (potentials[i][j] - minPotential) / (maxPotential - minPotential)
+			v := (potentials[i][j] - minPotential) / pRange
+			// Gamma correction to reveal smaller planetary contributions
+			normalized[i][j] = math.Pow(v, 0.4)
 		}
 	}
 

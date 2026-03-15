@@ -241,10 +241,30 @@ func (a *App) createControls() *fyne.Container {
 	})
 	planetGravityCheck.Checked = a.state.PlanetGravity()
 
-	relativityCheck := widget.NewCheck("General Relativity (Mercury)", func(checked bool) {
+	relativityCheck := widget.NewCheck("General Relativity", func(checked bool) {
 		a.state.SetRelativity(checked)
 	})
 	relativityCheck.Checked = a.state.Relativity()
+
+	moonsCheck := widget.NewCheck("Show Moons", func(checked bool) {
+		a.state.SetShowMoons(checked)
+	})
+	moonsCheck.Checked = a.state.ShowMoons()
+
+	cometsCheck := widget.NewCheck("Show Comets", func(checked bool) {
+		a.state.SetShowComets(checked)
+	})
+	cometsCheck.Checked = a.state.ShowComets()
+
+	asteroidsCheck := widget.NewCheck("Show Asteroids", func(checked bool) {
+		a.state.SetShowAsteroids(checked)
+	})
+	asteroidsCheck.Checked = a.state.ShowAsteroids()
+
+	beltCheck := widget.NewCheck("Show Asteroid Belt", func(checked bool) {
+		a.state.SetShowBelt(checked)
+	})
+	beltCheck.Checked = a.state.ShowBelt()
 
 	integratorSelect := widget.NewSelect([]string{"Verlet (symplectic)", "RK4 (classic)"}, func(selected string) {
 		if selected == "RK4 (classic)" {
@@ -265,7 +285,7 @@ func (a *App) createControls() *fyne.Container {
 	}
 
 	zoomLabel := widget.NewLabel(fmt.Sprintf("Zoom: %.2fx", a.viewport.Zoom))
-	zoomSlider := widget.NewSlider(-2, 3)
+	zoomSlider := widget.NewSlider(-2, 23)
 	zoomSlider.Value = 0
 	zoomSlider.Step = 0.1
 	zoomSlider.OnChanged = func(value float64) {
@@ -282,7 +302,12 @@ func (a *App) createControls() *fyne.Container {
 		zoomLabel.SetText(fmt.Sprintf("Zoom: %.2fx", a.viewport.Zoom))
 	})
 
-	followOptions := []string{"None (Free Camera)", "Sun", "Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune"}
+	followOptions := []string{"None (Free Camera)", "Sun"}
+	a.simulator.RLock()
+	for _, p := range a.simulator.Planets {
+		followOptions = append(followOptions, p.Name)
+	}
+	a.simulator.RUnlock()
 	followSelect := widget.NewSelect(followOptions, func(selected string) {
 		if selected == "None (Free Camera)" {
 			a.viewport.Lock()
@@ -389,8 +414,16 @@ func (a *App) createControls() *fyne.Container {
 		trailsCheck.Refresh()
 		spacetimeCheck.Refresh()
 		planetGravityCheck.Refresh()
+		moonsCheck.Checked = a.state.ShowMoons()
+		cometsCheck.Checked = a.state.ShowComets()
+		asteroidsCheck.Checked = a.state.ShowAsteroids()
+		beltCheck.Checked = a.state.ShowBelt()
 		relativityCheck.Refresh()
 		integratorSelect.Refresh()
+		moonsCheck.Refresh()
+		cometsCheck.Refresh()
+		asteroidsCheck.Refresh()
+		beltCheck.Refresh()
 	})
 
 	controls := container.NewVBox(
@@ -434,6 +467,12 @@ func (a *App) createControls() *fyne.Container {
 				a.gpuRenderer.SetRTMode(checked)
 			}
 		}),
+		widget.NewSeparator(),
+		widget.NewLabel("Celestial Bodies:"),
+		moonsCheck,
+		cometsCheck,
+		asteroidsCheck,
+		beltCheck,
 		widget.NewSeparator(),
 		widget.NewLabel("Physics Options:"),
 		planetGravityCheck,

@@ -41,7 +41,7 @@ func TestGRCorrectionNonZeroForMercury(t *testing.T) {
 	}
 }
 
-func TestGRCorrectionZeroForOtherPlanets(t *testing.T) {
+func TestGRCorrectionNonZeroForAllPlanets(t *testing.T) {
 	sim := NewSimulator()
 
 	states := make([]BodyState, len(sim.Planets))
@@ -61,8 +61,15 @@ func TestGRCorrectionZeroForOtherPlanets(t *testing.T) {
 				sim.Planets[idx].Mass, name, states)
 
 			diff := accelGR.Sub(accelNewton)
-			if diff.Magnitude() > 1e-30 {
-				t.Errorf("GR correction should be zero for %s, got magnitude %e", name, diff.Magnitude())
+			if diff.Magnitude() < 1e-20 {
+				t.Errorf("GR correction should be non-zero for %s, got magnitude %e", name, diff.Magnitude())
+			}
+
+			ratio := diff.Magnitude() / accelNewton.Magnitude()
+			t.Logf("%s GR/Newtonian ratio: %e", name, ratio)
+			// 1PN correction should be small but non-zero for all planets
+			if ratio > 1e-5 || ratio < 1e-15 {
+				t.Errorf("GR/Newtonian ratio %e out of expected range [1e-15, 1e-5] for %s", ratio, name)
 			}
 		})
 	}

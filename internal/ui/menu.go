@@ -50,11 +50,39 @@ func (a *App) buildMainMenu() *fyne.MainMenu {
 		a.state.SetShowLabels(!a.state.ShowLabels())
 	}
 
+	moonsItem := fyne.NewMenuItem("Toggle Moons", nil)
+	moonsItem.Checked = a.state.ShowMoons()
+	moonsItem.Action = func() {
+		a.state.SetShowMoons(!a.state.ShowMoons())
+	}
+
+	cometsItem := fyne.NewMenuItem("Toggle Comets", nil)
+	cometsItem.Checked = a.state.ShowComets()
+	cometsItem.Action = func() {
+		a.state.SetShowComets(!a.state.ShowComets())
+	}
+
+	asteroidsItem := fyne.NewMenuItem("Toggle Asteroids", nil)
+	asteroidsItem.Checked = a.state.ShowAsteroids()
+	asteroidsItem.Action = func() {
+		a.state.SetShowAsteroids(!a.state.ShowAsteroids())
+	}
+
+	beltItem := fyne.NewMenuItem("Toggle Asteroid Belt", nil)
+	beltItem.Checked = a.state.ShowBelt()
+	beltItem.Action = func() {
+		a.state.SetShowBelt(!a.state.ShowBelt())
+	}
+
 	// Register listener to keep menu check marks in sync
 	a.state.AddListener(func() {
 		trailsItem.Checked = a.state.ShowTrails()
 		spacetimeItem.Checked = a.state.ShowSpacetime()
 		labelsItem.Checked = a.state.ShowLabels()
+		moonsItem.Checked = a.state.ShowMoons()
+		cometsItem.Checked = a.state.ShowComets()
+		asteroidsItem.Checked = a.state.ShowAsteroids()
+		beltItem.Checked = a.state.ShowBelt()
 	})
 
 	maximizeItem := fyne.NewMenuItem("Maximize Window", func() {
@@ -72,6 +100,8 @@ func (a *App) buildMainMenu() *fyne.MainMenu {
 
 	viewMenu := fyne.NewMenu("View",
 		trailsItem, spacetimeItem, labelsItem,
+		fyne.NewMenuItemSeparator(),
+		moonsItem, cometsItem, asteroidsItem, beltItem,
 		fyne.NewMenuItemSeparator(),
 		maximizeItem, fullscreenItem, resetSizeItem,
 	)

@@ -3,9 +3,11 @@ package render
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"image/draw"
 	"image/jpeg"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,15 +39,22 @@ func (tm *TextureManager) LoadAll() error {
 		return fmt.Errorf("texture dir: %w", err)
 	}
 
-	planetNames := []string{"sun", "mercury", "venus", "earth", "mars", "jupiter", "saturn", "uranus", "neptune"}
-	loaded := 0
+	// Dynamically discover all texture directories
+	entries, dirErr := os.ReadDir(texDir)
+	if dirErr != nil {
+		return fmt.Errorf("read texture dir: %w", dirErr)
+	}
 
-	for _, name := range planetNames {
-		// Try common extensions
+	loaded := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := strings.ToLower(entry.Name())
 		for _, ext := range []string{"albedo.jpg", "albedo.png"} {
 			path := filepath.Join(texDir, name, ext)
-			img, err := loadImage(path)
-			if err != nil {
+			img, loadErr := loadImage(path)
+			if loadErr != nil {
 				continue
 			}
 			tm.mu.Lock()
@@ -176,6 +185,108 @@ func (tm *TextureManager) GetRawTexture(name string) image.Image {
 	tm.mu.RLock()
 	defer tm.mu.RUnlock()
 	return tm.textures[strings.ToLower(name)]
+}
+
+// GetIrregularImage returns an irregular (non-circular) image for an asteroid.
+// Uses a seeded noise function to perturb the boundary into a lumpy potato shape.
+func (tm *TextureManager) GetIrregularImage(name string, diameter int, seed int64) image.Image {
+	if diameter < 2 {
+		diameter = 2
+	}
+	lowerName := strings.ToLower(name)
+
+	// Check cache first (reuse circles cache)
+	cacheKey := fmt.Sprintf("%s_irreg_%d", lowerName, seed)
+	tm.mu.RLock()
+	if sizeMap, ok := tm.circles[cacheKey]; ok {
+		if cached, ok := sizeMap[diameter]; ok {
+			tm.mu.RUnlock()
+			return cached
+		}
+	}
+	tm.mu.RUnlock()
+
+	// Generate procedural irregular asteroid
+	img := makeIrregularImage(diameter, seed)
+
+	tm.mu.Lock()
+	if _, ok := tm.circles[cacheKey]; !ok {
+		tm.circles[cacheKey] = make(map[int]*image.RGBA)
+	}
+	tm.circles[cacheKey][diameter] = img
+	tm.mu.Unlock()
+
+	return img
+}
+
+// makeIrregularImage creates a lumpy potato-shaped asteroid image.
+func makeIrregularImage(diameter int, seed int64) *image.RGBA {
+	dst := image.NewRGBA(image.Rect(0, 0, diameter, diameter))
+	radius := float64(diameter) / 2.0
+	rng := newSimpleRNG(seed)
+
+	// Generate 8 radial perturbation values for lumpy shape
+	const nLobes = 8
+	lobes := make([]float64, nLobes)
+	for i := range lobes {
+		lobes[i] = 0.65 + rng.Float64()*0.35 // 65% to 100% of radius
+	}
+
+	// Base gray color with slight variation
+	baseR := uint8(100 + rng.Intn(80))
+	baseG := uint8(90 + rng.Intn(70))
+	baseB := uint8(80 + rng.Intn(60))
+
+	for y := 0; y < diameter; y++ {
+		for x := 0; x < diameter; x++ {
+			dx := float64(x) - radius + 0.5
+			dy := float64(y) - radius + 0.5
+			dist := math.Sqrt(dx*dx + dy*dy)
+			angle := math.Atan2(dy, dx)
+
+			// Interpolate between lobes for smooth boundary
+			t := (angle + math.Pi) / (2 * math.Pi) * float64(nLobes)
+			idx := int(t) % nLobes
+			nextIdx := (idx + 1) % nLobes
+			frac := t - math.Floor(t)
+			boundaryRadius := radius * (lobes[idx]*(1-frac) + lobes[nextIdx]*frac)
+
+			if dist > boundaryRadius {
+				continue
+			}
+
+			// Surface detail: slight color variation
+			shade := 0.7 + 0.3*(1-dist/boundaryRadius)
+			r := uint8(float64(baseR) * shade)
+			g := uint8(float64(baseG) * shade)
+			b := uint8(float64(baseB) * shade)
+			dst.Set(x, y, color.RGBA{r, g, b, 255})
+		}
+	}
+
+	return dst
+}
+
+// simpleRNG is a simple deterministic random number generator.
+type simpleRNG struct {
+	state uint64
+}
+
+func newSimpleRNG(seed int64) *simpleRNG {
+	return &simpleRNG{state: uint64(seed) ^ 0x5DEECE66D}
+}
+
+func (r *simpleRNG) next() uint64 {
+	r.state = r.state*6364136223846793005 + 1442695040888963407
+	return r.state
+}
+
+func (r *simpleRNG) Float64() float64 {
+	return float64(r.next()>>11) / float64(1<<53)
+}
+
+func (r *simpleRNG) Intn(n int) int {
+	return int(r.next() % uint64(n))
 }
 
 // Ensure draw package is importable (used by potential future compositing)

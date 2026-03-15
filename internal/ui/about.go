@@ -16,7 +16,7 @@ func (a *App) showAboutWindow() {
 	title.TextStyle = fyne.TextStyle{Bold: true}
 	title.Alignment = fyne.TextAlignCenter
 
-	version := widget.NewLabel("Version 1.1")
+	version := widget.NewLabel("Version 0.1.2")
 	version.Alignment = fyne.TextAlignCenter
 
 	author := widget.NewLabel("Author: Joshua Baney")

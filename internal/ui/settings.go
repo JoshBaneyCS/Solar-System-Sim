@@ -17,6 +17,10 @@ type Settings struct {
 	ShowLabels    bool
 	PlanetGravity bool
 	Relativity    bool
+	ShowMoons     bool
+	ShowComets    bool
+	ShowAsteroids bool
+	ShowBelt      bool
 }
 
 // DefaultSettings returns the default configuration.
@@ -31,6 +35,10 @@ func DefaultSettings() Settings {
 		ShowLabels:    true,
 		PlanetGravity: true,
 		Relativity:    true,
+		ShowMoons:     true,
+		ShowComets:    false,
+		ShowAsteroids: false,
+		ShowBelt:      true,
 	}
 }
 
@@ -47,6 +55,10 @@ func LoadSettings(prefs fyne.Preferences) Settings {
 		ShowLabels:    prefs.BoolWithFallback("show_labels", d.ShowLabels),
 		PlanetGravity: prefs.BoolWithFallback("planet_gravity", d.PlanetGravity),
 		Relativity:    prefs.BoolWithFallback("relativity", d.Relativity),
+		ShowMoons:     prefs.BoolWithFallback("show_moons", d.ShowMoons),
+		ShowComets:    prefs.BoolWithFallback("show_comets", d.ShowComets),
+		ShowAsteroids: prefs.BoolWithFallback("show_asteroids", d.ShowAsteroids),
+		ShowBelt:      prefs.BoolWithFallback("show_belt", d.ShowBelt),
 	}
 }
 
@@ -61,6 +73,10 @@ func (s Settings) Save(prefs fyne.Preferences) {
 	prefs.SetBool("show_labels", s.ShowLabels)
 	prefs.SetBool("planet_gravity", s.PlanetGravity)
 	prefs.SetBool("relativity", s.Relativity)
+	prefs.SetBool("show_moons", s.ShowMoons)
+	prefs.SetBool("show_comets", s.ShowComets)
+	prefs.SetBool("show_asteroids", s.ShowAsteroids)
+	prefs.SetBool("show_belt", s.ShowBelt)
 }
 
 // showSettingsDialog opens a modal settings dialog.
