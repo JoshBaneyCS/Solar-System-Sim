@@ -3,12 +3,12 @@ package render
 import (
 	"image"
 	"image/color"
-	"sync"
 
 	"fyne.io/fyne/v2/canvas"
 )
 
-// RenderCache pools canvas objects for performance
+// RenderCache pools canvas objects for performance.
+// Only accessed from the single render goroutine — no mutex needed.
 type RenderCache struct {
 	circles     []*canvas.Circle
 	lines       []*canvas.Line
@@ -18,7 +18,6 @@ type RenderCache struct {
 	lineIndex   int
 	textIndex   int
 	imageIndex  int
-	mu          sync.Mutex
 }
 
 func NewRenderCache() *RenderCache {
@@ -31,8 +30,6 @@ func NewRenderCache() *RenderCache {
 }
 
 func (rc *RenderCache) Reset() {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
 	rc.circleIndex = 0
 	rc.lineIndex = 0
 	rc.textIndex = 0
@@ -40,9 +37,6 @@ func (rc *RenderCache) Reset() {
 }
 
 func (rc *RenderCache) GetCircle(col color.Color) *canvas.Circle {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
 	if rc.circleIndex < len(rc.circles) {
 		circle := rc.circles[rc.circleIndex]
 		circle.FillColor = col
@@ -57,9 +51,6 @@ func (rc *RenderCache) GetCircle(col color.Color) *canvas.Circle {
 }
 
 func (rc *RenderCache) GetLine(col color.Color) *canvas.Line {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
 	if rc.lineIndex < len(rc.lines) {
 		line := rc.lines[rc.lineIndex]
 		line.StrokeColor = col
@@ -74,9 +65,6 @@ func (rc *RenderCache) GetLine(col color.Color) *canvas.Line {
 }
 
 func (rc *RenderCache) GetText(text string, col color.Color) *canvas.Text {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
 	if rc.textIndex < len(rc.texts) {
 		textObj := rc.texts[rc.textIndex]
 		textObj.Text = text
@@ -93,9 +81,6 @@ func (rc *RenderCache) GetText(text string, col color.Color) *canvas.Text {
 
 // GetImage returns a pooled canvas.Image set to the given source image.
 func (rc *RenderCache) GetImage(img image.Image) *canvas.Image {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
 	if rc.imageIndex < len(rc.images) {
 		imgObj := rc.images[rc.imageIndex]
 		imgObj.Image = img

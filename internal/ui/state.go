@@ -2,6 +2,7 @@ package ui
 
 import (
 	"sync"
+	"time"
 
 	"solar-system-sim/internal/physics"
 )
@@ -31,7 +32,8 @@ type AppState struct {
 	app       *App
 
 	// Observer pattern
-	listeners []func()
+	listeners   []func()
+	notifyTimer *time.Timer
 }
 
 // NewAppState creates a new AppState bound to the given simulator and app.
@@ -61,10 +63,20 @@ func (s *AppState) AddListener(fn func()) {
 	s.listeners = append(s.listeners, fn)
 }
 
+// notifyListeners debounces listener notifications to avoid flooding
+// Fyne's event loop during rapid slider drags.
 func (s *AppState) notifyListeners() {
-	for _, fn := range s.listeners {
-		fn()
+	if s.notifyTimer != nil {
+		s.notifyTimer.Stop()
 	}
+	s.notifyTimer = time.AfterFunc(50*time.Millisecond, func() {
+		s.mu.RLock()
+		listeners := s.listeners
+		s.mu.RUnlock()
+		for _, fn := range listeners {
+			fn()
+		}
+	})
 }
 
 // --- Getters ---

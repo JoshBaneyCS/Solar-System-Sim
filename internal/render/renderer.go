@@ -92,10 +92,10 @@ func NewRenderer(sim *physics.Simulator, vp *viewport.ViewPort) *Renderer {
 func (r *Renderer) CreateCanvasFromSnapshot(planets []physics.Body, sun physics.Body, showTrails, showSpacetime bool, simTime float64) *fyne.Container {
 	r.Cache.Reset()
 
-	r.Viewport.RLock()
-	canvasWidth := r.Viewport.CanvasWidth
-	canvasHeight := r.Viewport.CanvasHeight
-	r.Viewport.RUnlock()
+	// Single lock acquisition for the entire frame — eliminates 3600+ RLock cycles
+	snap := r.Viewport.TakeSnapshot()
+	canvasWidth := snap.CanvasWidth
+	canvasHeight := snap.CanvasHeight
 
 	objects := []fyne.CanvasObject{}
 
@@ -117,27 +117,41 @@ func (r *Renderer) CreateCanvasFromSnapshot(planets []physics.Body, sun physics.
 		objects = append(objects, spacetimeObjects...)
 	}
 
-	// Render asteroid belt particles to image buffer
+	// Render belt and trail buffers in parallel — they write to independent images
+	var beltImg, trailImg *image.RGBA
+	var wg sync.WaitGroup
+
 	if r.ShowBelt && r.BeltRenderer != nil {
-		beltImg := r.BeltRenderer.RenderToImage(r.Viewport, simTime, canvasWidth, canvasHeight)
-		if beltImg != nil {
-			imgObj := r.Cache.GetImage(beltImg)
-			imgObj.FillMode = canvas.ImageFillOriginal
-			imgObj.Resize(fyne.NewSize(float32(canvasWidth), float32(canvasHeight)))
-			imgObj.Move(fyne.NewPos(0, 0))
-			objects = append(objects, imgObj)
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			beltImg = r.BeltRenderer.RenderToImage(snap, simTime, canvasWidth, canvasHeight)
+		}()
 	}
 
 	if showTrails {
-		trailImg := r.trailBuffer.Render(planets, r.Viewport, canvasWidth, canvasHeight)
-		if trailImg != nil {
-			imgObj := r.Cache.GetImage(trailImg)
-			imgObj.FillMode = canvas.ImageFillOriginal
-			imgObj.Resize(fyne.NewSize(float32(canvasWidth), float32(canvasHeight)))
-			imgObj.Move(fyne.NewPos(0, 0))
-			objects = append(objects, imgObj)
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			trailImg = r.trailBuffer.Render(planets, snap, canvasWidth, canvasHeight)
+		}()
+	}
+
+	wg.Wait()
+
+	if beltImg != nil {
+		imgObj := r.Cache.GetImage(beltImg)
+		imgObj.FillMode = canvas.ImageFillOriginal
+		imgObj.Resize(fyne.NewSize(float32(canvasWidth), float32(canvasHeight)))
+		imgObj.Move(fyne.NewPos(0, 0))
+		objects = append(objects, imgObj)
+	}
+	if trailImg != nil {
+		imgObj := r.Cache.GetImage(trailImg)
+		imgObj.FillMode = canvas.ImageFillOriginal
+		imgObj.Resize(fyne.NewSize(float32(canvasWidth), float32(canvasHeight)))
+		imgObj.Move(fyne.NewPos(0, 0))
+		objects = append(objects, imgObj)
 	}
 
 	// Create lighting model
@@ -153,7 +167,7 @@ func (r *Renderer) CreateCanvasFromSnapshot(planets []physics.Body, sun physics.
 	r.lightingCacheMu.Unlock()
 
 	// Render Sun
-	sunX, sunY := r.Viewport.WorldToScreen(sun.Position)
+	sunX, sunY := snap.WorldToScreen(sun.Position)
 	if r.isOnScreen(sunX, sunY, canvasWidth, canvasHeight) {
 		sunRadius := float32(sun.Radius)
 
@@ -193,9 +207,9 @@ func (r *Renderer) CreateCanvasFromSnapshot(planets []physics.Body, sun physics.
 	}
 
 	// Render planets, moons, comets, and asteroids
-	displayScale := r.Viewport.GetDisplayScale()
+	displayScale := snap.DisplayScale
 	for _, planet := range planets {
-		x, y := r.Viewport.WorldToScreen(planet.Position)
+		x, y := snap.WorldToScreen(planet.Position)
 
 		if r.isOnScreen(x, y, canvasWidth, canvasHeight) {
 			// Compute display radius: use physical radius when zoomed in enough
@@ -261,12 +275,12 @@ func (r *Renderer) CreateCanvasFromSnapshot(planets []physics.Body, sun physics.
 
 	// Render launch trajectory
 	if r.LaunchTrajectory != nil && len(r.LaunchTrajectory.Points) > 1 {
-		objects = append(objects, r.renderTrajectory(canvasWidth, canvasHeight)...)
+		objects = append(objects, r.renderTrajectory(&snap, canvasWidth, canvasHeight)...)
 	}
 
 	// Render launch vehicle marker
 	if r.LaunchVehiclePos != nil {
-		vx, vy := r.Viewport.WorldToScreen(*r.LaunchVehiclePos)
+		vx, vy := snap.WorldToScreen(*r.LaunchVehiclePos)
 		if r.isOnScreen(vx, vy, canvasWidth, canvasHeight) {
 			marker := r.Cache.GetCircle(color.RGBA{0, 255, 200, 255})
 			marker.Resize(fyne.NewSize(8, 8))
@@ -279,8 +293,8 @@ func (r *Renderer) CreateCanvasFromSnapshot(planets []physics.Body, sun physics.
 		pos1 := r.SelectedBodies[0].Position
 		pos2 := r.SelectedBodies[1].Position
 
-		x1, y1 := r.Viewport.WorldToScreen(pos1)
-		x2, y2 := r.Viewport.WorldToScreen(pos2)
+		x1, y1 := snap.WorldToScreen(pos1)
+		x2, y2 := snap.WorldToScreen(pos2)
 
 		distLine := r.Cache.GetLine(color.RGBA{255, 255, 0, 180})
 		distLine.Position1 = fyne.NewPos(x1, y1)
@@ -348,7 +362,7 @@ func (r *Renderer) getSunGlow(diameter int) image.Image {
 }
 
 // renderTrajectory draws the launch trajectory as colored line segments.
-func (r *Renderer) renderTrajectory(canvasWidth, canvasHeight float64) []fyne.CanvasObject {
+func (r *Renderer) renderTrajectory(snap *viewport.Snapshot, canvasWidth, canvasHeight float64) []fyne.CanvasObject {
 	traj := r.LaunchTrajectory
 	if traj == nil || len(traj.Points) < 2 {
 		return nil
@@ -375,8 +389,8 @@ func (r *Renderer) renderTrajectory(canvasWidth, canvasHeight float64) []fyne.Ca
 			p2 = p2.Add(r.LaunchEarthPos)
 		}
 
-		x1, y1 := r.Viewport.WorldToScreen(p1)
-		x2, y2 := r.Viewport.WorldToScreen(p2)
+		x1, y1 := snap.WorldToScreen(p1)
+		x2, y2 := snap.WorldToScreen(p2)
 
 		if r.isOnScreen(x1, y1, canvasWidth, canvasHeight) ||
 			r.isOnScreen(x2, y2, canvasWidth, canvasHeight) {
@@ -406,15 +420,14 @@ func (r *Renderer) CreateLabelOverlay() *fyne.Container {
 	planets := r.Simulator.GetPlanetSnapshot()
 	sun := r.Simulator.GetSunSnapshot()
 
-	r.Viewport.RLock()
-	canvasWidth := r.Viewport.CanvasWidth
-	canvasHeight := r.Viewport.CanvasHeight
-	r.Viewport.RUnlock()
+	snap := r.Viewport.TakeSnapshot()
+	canvasWidth := snap.CanvasWidth
+	canvasHeight := snap.CanvasHeight
 
 	objects := []fyne.CanvasObject{}
 
 	if r.ShowLabels {
-		sunX, sunY := r.Viewport.WorldToScreen(sun.Position)
+		sunX, sunY := snap.WorldToScreen(sun.Position)
 		if r.isOnScreen(sunX, sunY, canvasWidth, canvasHeight) {
 			sunRadius := float32(sun.Radius)
 			sunLabel := r.Cache.GetText("Sun", color.White)
@@ -424,7 +437,7 @@ func (r *Renderer) CreateLabelOverlay() *fyne.Container {
 		}
 
 		for _, planet := range planets {
-			x, y := r.Viewport.WorldToScreen(planet.Position)
+			x, y := snap.WorldToScreen(planet.Position)
 			if r.isOnScreen(x, y, canvasWidth, canvasHeight) {
 				planetRadius := float32(planet.Radius)
 				label := r.Cache.GetText(planet.Name, color.White)
@@ -439,8 +452,8 @@ func (r *Renderer) CreateLabelOverlay() *fyne.Container {
 		pos1 := r.SelectedBodies[0].Position
 		pos2 := r.SelectedBodies[1].Position
 
-		x1, y1 := r.Viewport.WorldToScreen(pos1)
-		x2, y2 := r.Viewport.WorldToScreen(pos2)
+		x1, y1 := snap.WorldToScreen(pos1)
+		x2, y2 := snap.WorldToScreen(pos2)
 
 		dist := pos2.Sub(pos1).Magnitude()
 		distAU := dist / constants.AU

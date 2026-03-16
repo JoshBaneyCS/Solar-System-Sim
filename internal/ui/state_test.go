@@ -3,6 +3,7 @@ package ui
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"solar-system-sim/internal/physics"
 )
@@ -37,6 +38,8 @@ func TestAppState_ListenerFired(t *testing.T) {
 	})
 
 	state.SetShowSpacetime(true)
+	// Listener is debounced (50ms timer) — wait for it to fire
+	time.Sleep(100 * time.Millisecond)
 	if !fired {
 		t.Error("listener should have been called")
 	}

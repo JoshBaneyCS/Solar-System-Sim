@@ -23,7 +23,7 @@ func NewTrailBuffer() *TrailBuffer {
 }
 
 // Render draws all planet trails into a single image and returns it.
-func (tb *TrailBuffer) Render(planets []physics.Body, vp *viewport.ViewPort, canvasWidth, canvasHeight float64) *image.RGBA {
+func (tb *TrailBuffer) Render(planets []physics.Body, snap viewport.Snapshot, canvasWidth, canvasHeight float64) *image.RGBA {
 	w := int(canvasWidth)
 	h := int(canvasHeight)
 	if w <= 0 || h <= 0 {
@@ -36,10 +36,8 @@ func (tb *TrailBuffer) Render(planets []physics.Body, vp *viewport.ViewPort, can
 		tb.width = w
 		tb.height = h
 	} else {
-		// Clear buffer — zero out all pixels
-		for i := range tb.img.Pix {
-			tb.img.Pix[i] = 0
-		}
+		// Clear buffer — uses C memset when CGO is available
+		clearPixels(tb.img.Pix)
 	}
 
 	for _, planet := range planets {
@@ -83,11 +81,11 @@ func (tb *TrailBuffer) Render(planets []physics.Body, vp *viewport.ViewPort, can
 			alpha := uint8(float64(j) / trailLen * 255)
 
 			const nSub = 4
-			prevX, prevY := vp.WorldToScreen(p1)
+			prevX, prevY := snap.WorldToScreen(p1)
 			for k := 1; k <= nSub; k++ {
 				t := float64(k) / float64(nSub)
 				pt := math3d.CatmullRom(p0, p1, p2, p3, t)
-				curX, curY := vp.WorldToScreen(pt)
+				curX, curY := snap.WorldToScreen(pt)
 
 				// Draw if either endpoint is on screen
 				if isOnScreenF(prevX, prevY, canvasWidth, canvasHeight) ||

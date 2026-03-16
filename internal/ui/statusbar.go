@@ -21,6 +21,12 @@ type StatusBar struct {
 	infoLabel    *widget.Label
 	container    *fyne.Container
 	frameCount   atomic.Int64
+
+	// Throttling: only update labels every Nth frame and when values change
+	updateTick  int
+	lastSimTime float64
+	lastSpeed   float64
+	lastZoom    float64
 }
 
 // NewStatusBar creates a new status bar.
@@ -80,7 +86,20 @@ func (sb *StatusBar) StartFPSCounter() {
 }
 
 // Update refreshes the status bar with current simulation state.
+// Throttled to every 4th frame (~15 Hz) and skips when values are unchanged
+// to reduce Fyne main-thread marshaling overhead.
 func (sb *StatusBar) Update(simTimeDays, timeSpeed, zoom float64) {
+	sb.updateTick++
+	if sb.updateTick%4 != 0 {
+		return
+	}
+	if simTimeDays == sb.lastSimTime && timeSpeed == sb.lastSpeed && zoom == sb.lastZoom {
+		return
+	}
+	sb.lastSimTime = simTimeDays
+	sb.lastSpeed = timeSpeed
+	sb.lastZoom = zoom
+
 	years := simTimeDays / 365.25
 	if years >= 1 {
 		sb.simTimeLabel.SetText(fmt.Sprintf("Time: %.2f yr", years))

@@ -164,6 +164,90 @@ func (vp *ViewPort) AutoFit(bodies []physics.Body, sun physics.Body) {
 	vp.PanY = 0
 }
 
+// Snapshot captures all viewport state needed for rendering in a single lock acquisition.
+// The precomputed trig values eliminate repeated math.Sin/Cos calls across thousands
+// of WorldToScreen invocations per frame.
+type Snapshot struct {
+	DisplayScale              float64
+	PanX, PanY                float64
+	CanvasWidth, CanvasHeight float64
+	CenterX, CenterY          float64
+	RotationX, RotationY      float64
+	Use3D                     bool
+	Zoom                      float64
+	CosX, SinX                float64
+	CosY, SinY                float64
+	CosZ, SinZ                float64
+}
+
+// TakeSnapshot acquires the viewport lock once and returns an immutable snapshot
+// of all rendering state. All subsequent WorldToScreen calls use this snapshot
+// with zero locking.
+func (vp *ViewPort) TakeSnapshot() Snapshot {
+	vp.mu.RLock()
+	s := Snapshot{
+		DisplayScale: DefaultDisplayScale * vp.Zoom,
+		PanX:         vp.PanX,
+		PanY:         vp.PanY,
+		CanvasWidth:  vp.CanvasWidth,
+		CanvasHeight: vp.CanvasHeight,
+		Use3D:        vp.Use3D,
+		Zoom:         vp.Zoom,
+	}
+	if vp.FollowBody != nil {
+		s.CenterX = vp.FollowBody.Position.X
+		s.CenterY = vp.FollowBody.Position.Y
+	}
+	if vp.Use3D {
+		s.RotationX = vp.RotationX
+		s.RotationY = vp.RotationY
+		s.CosX = math.Cos(vp.RotationX)
+		s.SinX = math.Sin(vp.RotationX)
+		s.CosY = math.Cos(vp.RotationY)
+		s.SinY = math.Sin(vp.RotationY)
+		s.CosZ = math.Cos(vp.RotationZ)
+		s.SinZ = math.Sin(vp.RotationZ)
+	}
+	vp.mu.RUnlock()
+	return s
+}
+
+// WorldToScreen converts a 3D world position to 2D screen coordinates using
+// precomputed snapshot state. No locking required.
+func (s *Snapshot) WorldToScreen(pos math3d.Vec3) (float32, float32) {
+	worldPos := pos
+	if s.Use3D {
+		if s.RotationX != 0 {
+			y := worldPos.Y*s.CosX - worldPos.Z*s.SinX
+			z := worldPos.Y*s.SinX + worldPos.Z*s.CosX
+			worldPos.Y = y
+			worldPos.Z = z
+		}
+		if s.RotationY != 0 {
+			x := worldPos.X*s.CosY + worldPos.Z*s.SinY
+			z := -worldPos.X*s.SinY + worldPos.Z*s.CosY
+			worldPos.X = x
+			worldPos.Z = z
+		}
+		if s.CosZ != 1.0 || s.SinZ != 0.0 {
+			x := worldPos.X*s.CosZ - worldPos.Y*s.SinZ
+			y := worldPos.X*s.SinZ + worldPos.Y*s.CosZ
+			worldPos.X = x
+			worldPos.Y = y
+		}
+	}
+
+	x := float32((worldPos.X-s.CenterX)/constants.AU*s.DisplayScale - s.PanX*s.DisplayScale + s.CanvasWidth/2)
+	y := float32((worldPos.Y-s.CenterY)/constants.AU*s.DisplayScale - s.PanY*s.DisplayScale + s.CanvasHeight/2)
+
+	if s.Use3D {
+		x -= float32(worldPos.Z / constants.AU * s.DisplayScale * 0.5)
+		y -= float32(worldPos.Z / constants.AU * s.DisplayScale * 0.8)
+	}
+
+	return x, y
+}
+
 // WorldToScreen converts a 3D world position to 2D screen coordinates
 func (vp *ViewPort) WorldToScreen(pos math3d.Vec3) (float32, float32) {
 	vp.mu.RLock()

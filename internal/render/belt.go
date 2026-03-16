@@ -38,7 +38,7 @@ var beltColors = []color.RGBA{
 }
 
 // RenderToImage computes belt particle positions and draws them into an image buffer.
-func (br *BeltRenderer) RenderToImage(vp *viewport.ViewPort, simTime float64, canvasWidth, canvasHeight float64) *image.RGBA {
+func (br *BeltRenderer) RenderToImage(snap viewport.Snapshot, simTime float64, canvasWidth, canvasHeight float64) *image.RGBA {
 	w := int(canvasWidth)
 	h := int(canvasHeight)
 	if w <= 0 || h <= 0 {
@@ -51,10 +51,8 @@ func (br *BeltRenderer) RenderToImage(vp *viewport.ViewPort, simTime float64, ca
 		br.width = w
 		br.height = h
 	} else {
-		// Clear buffer
-		for i := range br.img.Pix {
-			br.img.Pix[i] = 0
-		}
+		// Clear buffer — uses C memset when CGO is available
+		clearPixels(br.img.Pix)
 	}
 
 	pix := br.img.Pix
@@ -62,7 +60,7 @@ func (br *BeltRenderer) RenderToImage(vp *viewport.ViewPort, simTime float64, ca
 
 	for i, p := range br.particles {
 		pos := beltParticlePosition(p, simTime)
-		x, y := vp.WorldToScreen(pos)
+		x, y := snap.WorldToScreen(pos)
 
 		// Skip off-screen particles
 		ix := int(x)
