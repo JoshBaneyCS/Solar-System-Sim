@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/physics_core",
+    "crates/render_core",
+    "crates/solar_sim_bevy",
+]
+
+[workspace.dependencies]
+bevy = "0.15"
+rayon = "1.10"

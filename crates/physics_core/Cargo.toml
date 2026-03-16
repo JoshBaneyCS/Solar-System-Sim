@@ -3,8 +3,13 @@ name = "physics_core"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+ffi = []  # Enables cdylib output for Go FFI interop
+
 [lib]
-crate-type = ["cdylib"]
+# lib for Rust-to-Rust dependency (solar_sim_bevy); cdylib for Go FFI
+crate-type = ["lib", "cdylib"]
 name = "physics_core"
 
 [dependencies]

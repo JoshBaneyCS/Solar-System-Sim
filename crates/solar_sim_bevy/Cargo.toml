@@ -1,0 +1,8 @@
+[package]
+name = "solar_sim_bevy"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { workspace = true }
+physics_core = { path = "../physics_core" }

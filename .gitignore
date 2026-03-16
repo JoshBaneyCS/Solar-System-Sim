@@ -6,6 +6,7 @@ bin/
 *.dll
 
 # Rust build artifacts
+target/
 crates/*/target/
 
 # Go
