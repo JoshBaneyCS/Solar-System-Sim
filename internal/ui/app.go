@@ -84,16 +84,21 @@ func (a *App) createPhysicsPanel() *fyne.Container {
 	equations.Wrapping = fyne.TextWrapWord
 
 	updateEquations := func() {
-		planets := a.simulator.GetPlanetSnapshot()
-		sun := a.simulator.GetSunSnapshot()
+		snap := a.simulator.GetSnapshot()
+		if snap == nil {
+			return
+		}
+		planets := snap.Planets
+		sun := snap.Sun
 
+		// Read config values that aren't in the snapshot via AppState (lightweight)
 		a.simulator.RLock()
 		sunMass := a.simulator.SunMass
 		planetGravityEnabled := a.simulator.PlanetGravityEnabled
 		relativisticEffects := a.simulator.RelativisticEffects
-		currentTime := a.simulator.CurrentTime
-		timeSpeed := a.simulator.TimeSpeed
 		a.simulator.RUnlock()
+		currentTime := snap.CurrentTime
+		timeSpeed := snap.TimeSpeed
 
 		if len(planets) < 3 {
 			return
@@ -505,7 +510,14 @@ func (a *App) Run() {
 	physicsPanel := a.createPhysicsPanel()
 	controls := a.createControls()
 
-	a.canvas = a.renderer.CreateCanvas()
+	// Initial render using direct snapshot (physics loop not started yet)
+	initPlanets := a.simulator.GetPlanetSnapshot()
+	initSun := a.simulator.GetSunSnapshot()
+	a.canvas = a.renderer.CreateCanvasFromSnapshot(
+		initPlanets, initSun,
+		a.state.ShowTrails(), a.state.ShowSpacetime(),
+		0,
+	)
 
 	canvasRect := canvas.NewRectangle(color.Transparent)
 	rawCanvasContainer := container.NewMax(canvasRect, a.canvas)
@@ -625,7 +637,13 @@ func (a *App) Run() {
 				a.gpuRenderer.Refresh()
 				a.canvas.Refresh()
 			} else {
-				a.canvas.Objects = a.renderer.CreateCanvas().Objects
+				showTrails := a.state.ShowTrails()
+				showSpacetime := a.state.ShowSpacetime()
+				a.canvas.Objects = a.renderer.CreateCanvasFromSnapshot(
+					snap.Planets, snap.Sun,
+					showTrails, showSpacetime,
+					snap.CurrentTime,
+				).Objects
 				a.canvas.Refresh()
 			}
 

@@ -87,17 +87,10 @@ func NewRenderer(sim *physics.Simulator, vp *viewport.ViewPort) *Renderer {
 	return r
 }
 
-// CreateCanvas renders the simulation state to a canvas
-func (r *Renderer) CreateCanvas() *fyne.Container {
+// CreateCanvas renders the simulation state to a canvas using pre-fetched snapshot data.
+// This avoids acquiring any simulator locks from the render path.
+func (r *Renderer) CreateCanvasFromSnapshot(planets []physics.Body, sun physics.Body, showTrails, showSpacetime bool, simTime float64) *fyne.Container {
 	r.Cache.Reset()
-
-	planets := r.Simulator.GetPlanetSnapshot()
-	sun := r.Simulator.GetSunSnapshot()
-
-	r.Simulator.RLock()
-	showTrails := r.Simulator.ShowTrails
-	showSpacetime := r.Simulator.ShowSpacetime
-	r.Simulator.RUnlock()
 
 	r.Viewport.RLock()
 	canvasWidth := r.Viewport.CanvasWidth
@@ -126,9 +119,6 @@ func (r *Renderer) CreateCanvas() *fyne.Container {
 
 	// Render asteroid belt particles to image buffer
 	if r.ShowBelt && r.BeltRenderer != nil {
-		r.Simulator.RLock()
-		simTime := r.Simulator.CurrentTime
-		r.Simulator.RUnlock()
 		beltImg := r.BeltRenderer.RenderToImage(r.Viewport, simTime, canvasWidth, canvasHeight)
 		if beltImg != nil {
 			imgObj := r.Cache.GetImage(beltImg)

@@ -23,6 +23,13 @@ type SimSnapshot struct {
 	IsPlaying   bool
 }
 
+// SimCommand is a mutation to apply to the simulator from the UI thread.
+// Commands are sent via SendCommand and processed by the physics goroutine,
+// avoiding lock contention between UI and physics.
+type SimCommand struct {
+	Apply func(s *Simulator)
+}
+
 // MaxSafeDt is the maximum integration timestep (seconds) before substep subdivision.
 // At 8 hours, Mercury gets ~264 steps/orbit even at max TimeSpeed.
 const MaxSafeDt = 28800.0
@@ -102,6 +109,7 @@ type Simulator struct {
 	scratch              *rk4Scratch
 	latestSnapshot       atomic.Pointer[SimSnapshot]
 	stopCh               chan struct{}
+	commandCh            chan SimCommand
 }
 
 // RLock acquires a read lock on the simulator mutex.
@@ -144,6 +152,7 @@ func NewSimulator() *Simulator {
 	}
 
 	sim.scratch = newRK4Scratch(len(sim.Planets))
+	sim.commandCh = make(chan SimCommand, 32)
 
 	initBackend(sim)
 
@@ -605,6 +614,39 @@ func (s *Simulator) GetSnapshot() *SimSnapshot {
 	return s.latestSnapshot.Load()
 }
 
+// SendCommand enqueues a mutation to be applied by the physics goroutine.
+// If the physics loop is not running, the command is applied directly with a lock.
+// This is non-blocking from the UI thread.
+func (s *Simulator) SendCommand(cmd SimCommand) {
+	// If physics loop isn't running, apply directly
+	if s.stopCh == nil {
+		s.mu.Lock()
+		cmd.Apply(s)
+		s.mu.Unlock()
+		return
+	}
+	select {
+	case s.commandCh <- cmd:
+	default:
+		// Channel full — apply directly with lock as fallback
+		s.mu.Lock()
+		cmd.Apply(s)
+		s.mu.Unlock()
+	}
+}
+
+// drainCommands processes all pending commands. Must be called while holding s.mu write lock.
+func (s *Simulator) drainCommands() {
+	for {
+		select {
+		case cmd := <-s.commandCh:
+			cmd.Apply(s)
+		default:
+			return
+		}
+	}
+}
+
 // StartPhysicsLoop launches a background goroutine that steps the simulation
 // at ~60Hz. The render loop should use GetSnapshot() instead of calling Update().
 func (s *Simulator) StartPhysicsLoop(dt float64) {
@@ -623,11 +665,24 @@ func (s *Simulator) StartPhysicsLoop(dt float64) {
 			case <-s.stopCh:
 				return
 			case <-ticker.C:
-				s.Update(dt)
-				// Publish snapshot after step (lock is released by Update)
-				s.mu.RLock()
+				// Process pending UI commands + physics step under one lock
+				s.mu.Lock()
+				s.drainCommands()
+				if s.IsPlaying {
+					effectiveDt := dt * s.TimeSpeed
+					absDt := math.Abs(effectiveDt)
+					if absDt <= MaxSafeDt {
+						s.Step(effectiveDt)
+					} else {
+						nSub := int(math.Ceil(absDt / MaxSafeDt))
+						subDt := effectiveDt / float64(nSub)
+						for i := 0; i < nSub; i++ {
+							s.Step(subDt)
+						}
+					}
+				}
 				s.publishSnapshot()
-				s.mu.RUnlock()
+				s.mu.Unlock()
 			}
 		}
 	}()

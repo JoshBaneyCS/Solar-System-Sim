@@ -7,8 +7,8 @@ import (
 )
 
 // AppState is the single source of truth for all UI-observable application state.
-// All mutations go through setter methods which atomically update the simulator,
-// persist to settings, and notify registered listeners.
+// All mutations go through setter methods which update local state immediately
+// and send non-blocking commands to the physics goroutine via SendCommand.
 type AppState struct {
 	mu sync.RWMutex
 
@@ -117,28 +117,34 @@ func (s *AppState) IsPlaying() bool {
 	return s.isPlaying
 }
 
-// --- Setters (atomically update simulator + notify listeners) ---
+// --- Setters (update local state + send non-blocking command to physics) ---
 
 func (s *AppState) SetShowTrails(v bool) {
 	s.mu.Lock()
 	s.showTrails = v
-	s.simulator.Lock()
-	s.simulator.ShowTrails = v
-	s.simulator.Unlock()
-	if !v {
-		s.simulator.ClearTrails()
-	}
 	s.mu.Unlock()
+	s.simulator.SendCommand(physics.SimCommand{
+		Apply: func(sim *physics.Simulator) {
+			sim.ShowTrails = v
+			if !v {
+				for i := range sim.Planets {
+					sim.Planets[i].Trail = sim.Planets[i].Trail[:0]
+				}
+			}
+		},
+	})
 	s.notifyListeners()
 }
 
 func (s *AppState) SetShowSpacetime(v bool) {
 	s.mu.Lock()
 	s.showSpacetime = v
-	s.simulator.Lock()
-	s.simulator.ShowSpacetime = v
-	s.simulator.Unlock()
 	s.mu.Unlock()
+	s.simulator.SendCommand(physics.SimCommand{
+		Apply: func(sim *physics.Simulator) {
+			sim.ShowSpacetime = v
+		},
+	})
 	s.notifyListeners()
 }
 
@@ -156,50 +162,60 @@ func (s *AppState) SetShowLabels(v bool) {
 func (s *AppState) SetPlanetGravity(v bool) {
 	s.mu.Lock()
 	s.planetGravity = v
-	s.simulator.Lock()
-	s.simulator.PlanetGravityEnabled = v
-	s.simulator.Unlock()
 	s.mu.Unlock()
+	s.simulator.SendCommand(physics.SimCommand{
+		Apply: func(sim *physics.Simulator) {
+			sim.PlanetGravityEnabled = v
+		},
+	})
 	s.notifyListeners()
 }
 
 func (s *AppState) SetRelativity(v bool) {
 	s.mu.Lock()
 	s.relativity = v
-	s.simulator.Lock()
-	s.simulator.RelativisticEffects = v
-	s.simulator.Unlock()
 	s.mu.Unlock()
+	s.simulator.SendCommand(physics.SimCommand{
+		Apply: func(sim *physics.Simulator) {
+			sim.RelativisticEffects = v
+		},
+	})
 	s.notifyListeners()
 }
 
 func (s *AppState) SetIntegrator(v physics.IntegratorType) {
 	s.mu.Lock()
 	s.integrator = v
-	s.simulator.Lock()
-	s.simulator.Integrator = v
-	s.simulator.Unlock()
 	s.mu.Unlock()
+	s.simulator.SendCommand(physics.SimCommand{
+		Apply: func(sim *physics.Simulator) {
+			sim.Integrator = v
+		},
+	})
 	s.notifyListeners()
 }
 
 func (s *AppState) SetTimeSpeed(v float64) {
 	s.mu.Lock()
 	s.timeSpeed = v
-	s.simulator.Lock()
-	s.simulator.TimeSpeed = v
-	s.simulator.Unlock()
 	s.mu.Unlock()
+	s.simulator.SendCommand(physics.SimCommand{
+		Apply: func(sim *physics.Simulator) {
+			sim.TimeSpeed = v
+		},
+	})
 	s.notifyListeners()
 }
 
 func (s *AppState) SetIsPlaying(v bool) {
 	s.mu.Lock()
 	s.isPlaying = v
-	s.simulator.Lock()
-	s.simulator.IsPlaying = v
-	s.simulator.Unlock()
 	s.mu.Unlock()
+	s.simulator.SendCommand(physics.SimCommand{
+		Apply: func(sim *physics.Simulator) {
+			sim.IsPlaying = v
+		},
+	})
 	s.notifyListeners()
 }
 
@@ -230,46 +246,52 @@ func (s *AppState) ShowBelt() bool {
 func (s *AppState) SetShowMoons(v bool) {
 	s.mu.Lock()
 	s.showMoons = v
-	s.simulator.Lock()
-	if v && !s.simulator.ShowMoons {
-		s.simulator.AddMoons()
-	} else if !v && s.simulator.ShowMoons {
-		s.simulator.RemoveBodiesByType(physics.BodyTypeMoon)
-		s.simulator.ShowMoons = false
-	}
-	s.simulator.Unlock()
 	s.mu.Unlock()
+	s.simulator.SendCommand(physics.SimCommand{
+		Apply: func(sim *physics.Simulator) {
+			if v && !sim.ShowMoons {
+				sim.AddMoons()
+			} else if !v && sim.ShowMoons {
+				sim.RemoveBodiesByType(physics.BodyTypeMoon)
+				sim.ShowMoons = false
+			}
+		},
+	})
 	s.notifyListeners()
 }
 
 func (s *AppState) SetShowComets(v bool) {
 	s.mu.Lock()
 	s.showComets = v
-	s.simulator.Lock()
-	if v && !s.simulator.ShowComets {
-		s.simulator.AddComets()
-	} else if !v && s.simulator.ShowComets {
-		s.simulator.RemoveBodiesByType(physics.BodyTypeComet)
-		s.simulator.ShowComets = false
-	}
-	s.simulator.Unlock()
 	s.mu.Unlock()
+	s.simulator.SendCommand(physics.SimCommand{
+		Apply: func(sim *physics.Simulator) {
+			if v && !sim.ShowComets {
+				sim.AddComets()
+			} else if !v && sim.ShowComets {
+				sim.RemoveBodiesByType(physics.BodyTypeComet)
+				sim.ShowComets = false
+			}
+		},
+	})
 	s.notifyListeners()
 }
 
 func (s *AppState) SetShowAsteroids(v bool) {
 	s.mu.Lock()
 	s.showAsteroids = v
-	s.simulator.Lock()
-	if v && !s.simulator.ShowAsteroids {
-		s.simulator.AddAsteroids()
-	} else if !v && s.simulator.ShowAsteroids {
-		s.simulator.RemoveBodiesByType(physics.BodyTypeAsteroid)
-		s.simulator.RemoveBodiesByType(physics.BodyTypeDwarfPlanet)
-		s.simulator.ShowAsteroids = false
-	}
-	s.simulator.Unlock()
 	s.mu.Unlock()
+	s.simulator.SendCommand(physics.SimCommand{
+		Apply: func(sim *physics.Simulator) {
+			if v && !sim.ShowAsteroids {
+				sim.AddAsteroids()
+			} else if !v && sim.ShowAsteroids {
+				sim.RemoveBodiesByType(physics.BodyTypeAsteroid)
+				sim.RemoveBodiesByType(physics.BodyTypeDwarfPlanet)
+				sim.ShowAsteroids = false
+			}
+		},
+	})
 	s.notifyListeners()
 }
 
@@ -297,14 +319,6 @@ func (s *AppState) ApplyFromSettings(settings Settings) {
 		s.integrator = physics.IntegratorVerlet
 	}
 
-	s.simulator.Lock()
-	s.simulator.ShowTrails = settings.ShowTrails
-	s.simulator.ShowSpacetime = settings.ShowSpacetime
-	s.simulator.PlanetGravityEnabled = settings.PlanetGravity
-	s.simulator.RelativisticEffects = settings.Relativity
-	s.simulator.Integrator = s.integrator
-	s.simulator.Unlock()
-
 	if s.app != nil {
 		s.app.showLabels = settings.ShowLabels
 		s.app.renderer.ShowLabels = settings.ShowLabels
@@ -312,7 +326,19 @@ func (s *AppState) ApplyFromSettings(settings Settings) {
 	}
 	s.mu.Unlock()
 
-	// Apply body toggles (these use their own locking)
+	// Send all simulator changes as a single command
+	integ := s.integrator
+	s.simulator.SendCommand(physics.SimCommand{
+		Apply: func(sim *physics.Simulator) {
+			sim.ShowTrails = settings.ShowTrails
+			sim.ShowSpacetime = settings.ShowSpacetime
+			sim.PlanetGravityEnabled = settings.PlanetGravity
+			sim.RelativisticEffects = settings.Relativity
+			sim.Integrator = integ
+		},
+	})
+
+	// Apply body toggles
 	s.SetShowMoons(settings.ShowMoons)
 	s.SetShowComets(settings.ShowComets)
 	s.SetShowAsteroids(settings.ShowAsteroids)

@@ -67,21 +67,26 @@ func (a *App) createBodiesPanel() fyne.CanvasObject {
 			periodLabel := widget.NewLabel("Period: --")
 
 			trailCheck := widget.NewCheck("Show Trail", func(checked bool) {
-				a.simulator.Lock()
-				a.simulator.Planets[idx].ShowTrail = checked
-				if !checked {
-					a.simulator.Planets[idx].Trail = a.simulator.Planets[idx].Trail[:0]
-				}
-				a.simulator.Unlock()
+				capturedIdx := idx
+				a.simulator.SendCommand(physics.SimCommand{
+					Apply: func(sim *physics.Simulator) {
+						if capturedIdx < len(sim.Planets) {
+							sim.Planets[capturedIdx].ShowTrail = checked
+							if !checked {
+								sim.Planets[capturedIdx].Trail = sim.Planets[capturedIdx].Trail[:0]
+							}
+						}
+					},
+				})
 			})
 			trailCheck.Checked = p.ShowTrail
 
 			followBtn := widget.NewButton("Follow", func() {
-				a.simulator.RLock()
-				body := &a.simulator.Planets[idx]
-				a.simulator.RUnlock()
+				capturedIdx := idx
 				a.viewport.Lock()
-				a.viewport.FollowBody = body
+				if capturedIdx < len(a.simulator.Planets) {
+					a.viewport.FollowBody = &a.simulator.Planets[capturedIdx]
+				}
 				a.viewport.Unlock()
 			})
 
