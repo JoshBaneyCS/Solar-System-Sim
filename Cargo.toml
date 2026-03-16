@@ -8,4 +8,8 @@ members = [
 
 [workspace.dependencies]
 bevy = "0.15"
+bevy_egui = "0.33"
 rayon = "1.10"
+serde = { version = "1", features = ["derive"] }
+ron = "0.8"
+rand = "0.8"

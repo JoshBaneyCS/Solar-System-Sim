@@ -1,5 +1,6 @@
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
+use bevy_egui::EguiContexts;
 
 // ---------------------------------------------------------------------------
 // Resources
@@ -39,7 +40,7 @@ impl Default for OrbitCamera {
 
 /// Marker component for the orbit camera entity.
 #[derive(Component)]
-struct OrbitCameraMarker;
+pub struct OrbitCameraMarker;
 
 // ---------------------------------------------------------------------------
 // Plugin
@@ -50,10 +51,12 @@ pub struct CameraPlugin;
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(OrbitCamera::default())
+            .insert_resource(EguiWantsInput::default())
             .add_systems(Startup, spawn_camera)
             .add_systems(
                 Update,
                 (
+                    update_egui_wants_input,
                     camera_zoom,
                     camera_rotate,
                     camera_pan,
@@ -81,11 +84,32 @@ fn spawn_camera(mut commands: Commands) {
 // Input systems
 // ---------------------------------------------------------------------------
 
+/// Returns true if egui wants the input this frame.
+#[derive(Resource, Default)]
+pub struct EguiWantsInput {
+    pub pointer: bool,
+    pub keyboard: bool,
+}
+
+fn update_egui_wants_input(
+    mut contexts: EguiContexts,
+    mut wants: ResMut<EguiWantsInput>,
+) {
+    let ctx = contexts.ctx_mut();
+    wants.pointer = ctx.wants_pointer_input();
+    wants.keyboard = ctx.wants_keyboard_input();
+}
+
 /// Mouse scroll to zoom in/out.
 fn camera_zoom(
     mut orbit: ResMut<OrbitCamera>,
     mut scroll_events: EventReader<MouseWheel>,
+    egui_wants: Res<EguiWantsInput>,
 ) {
+    if egui_wants.pointer {
+        scroll_events.clear();
+        return;
+    }
     for ev in scroll_events.read() {
         let delta = ev.y;
         // Logarithmic zoom: multiply distance by a factor
@@ -100,7 +124,12 @@ fn camera_rotate(
     mut orbit: ResMut<OrbitCamera>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut motion_events: EventReader<MouseMotion>,
+    egui_wants: Res<EguiWantsInput>,
 ) {
+    if egui_wants.pointer {
+        motion_events.clear();
+        return;
+    }
     if !mouse_button.pressed(MouseButton::Right) {
         // Drain events to avoid stale deltas
         motion_events.clear();
@@ -122,7 +151,12 @@ fn camera_pan(
     mut orbit: ResMut<OrbitCamera>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut motion_events: EventReader<MouseMotion>,
+    egui_wants: Res<EguiWantsInput>,
 ) {
+    if egui_wants.pointer {
+        motion_events.clear();
+        return;
+    }
     if !mouse_button.pressed(MouseButton::Middle) {
         motion_events.clear();
         return;
@@ -143,7 +177,11 @@ fn camera_keyboard(
     mut orbit: ResMut<OrbitCamera>,
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
+    egui_wants: Res<EguiWantsInput>,
 ) {
+    if egui_wants.keyboard {
+        return;
+    }
     let dt = time.delta_secs();
     let move_speed = orbit.distance * 0.5 * dt;
     let rot_speed = 1.0 * dt;
