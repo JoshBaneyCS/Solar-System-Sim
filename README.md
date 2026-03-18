@@ -17,7 +17,7 @@
   </a>
 
   <h1>Solar System Simulator</h1>
-  <h3>v0.1.5</h3>
+  <h3>v0.2.0</h3>
 
   <p>
     GPU-Accelerated, Physically Accurate N-Body Solar System Simulator
