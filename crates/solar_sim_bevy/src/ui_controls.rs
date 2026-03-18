@@ -75,6 +75,15 @@ pub fn simulation_controls_panel(
             ui.checkbox(&mut config.show_belt, "Show Asteroid Belt");
             ui.checkbox(&mut config.show_spacetime, "Show Spacetime Fabric");
 
+            ui.add_space(4.0);
+            let mut incl = config.inclination_scale;
+            ui.horizontal(|ui| {
+                ui.label(format!("Inclination Scale: {:.0}x", incl));
+            });
+            if ui.add(egui::Slider::new(&mut incl, 1.0..=50.0).text("x")).changed() {
+                config.inclination_scale = incl;
+            }
+
             ui.add_space(12.0);
             ui.separator();
             ui.heading("Bodies");

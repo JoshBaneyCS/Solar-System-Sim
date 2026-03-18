@@ -41,6 +41,16 @@ pub fn physics_to_render(pos: PVec3) -> Vec3 {
     )
 }
 
+/// Like `physics_to_render` but exaggerates the vertical (out-of-plane) component
+/// so orbital inclinations become visible at typical camera distances.
+pub fn physics_to_render_scaled(pos: PVec3, inclination_scale: f32) -> Vec3 {
+    Vec3::new(
+        (pos.x / AU * RENDER_SCALE) as f32,
+        (pos.z / AU * RENDER_SCALE) as f32 * inclination_scale,
+        (pos.y / AU * RENDER_SCALE) as f32,
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Components
 // ---------------------------------------------------------------------------
@@ -94,6 +104,8 @@ pub struct SimulationConfig {
     pub general_relativity: bool,
     pub sun_mass_multiplier: f64,
     pub integrator: IntegratorType,
+    /// Visual exaggeration of orbital inclinations (1.0 = realistic, higher = more visible).
+    pub inclination_scale: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -119,6 +131,7 @@ impl Default for SimulationConfig {
             general_relativity: true,
             sun_mass_multiplier: 1.0,
             integrator: IntegratorType::Verlet,
+            inclination_scale: 10.0,
         }
     }
 }
@@ -562,6 +575,7 @@ fn step_simulation(
 }
 
 fn sync_ecs_from_simulation(
+    config: Res<SimulationConfig>,
     sim_state: Option<Res<SimulationState>>,
     mut query: Query<(&CelestialBody, &mut Transform), Without<Sun>>,
 ) {
@@ -572,7 +586,7 @@ fn sync_ecs_from_simulation(
             continue;
         }
         let pos = sim.inner.positions[body.sim_index];
-        transform.translation = physics_to_render(pos);
+        transform.translation = physics_to_render_scaled(pos, config.inclination_scale);
     }
 }
 
