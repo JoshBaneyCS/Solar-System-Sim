@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy_embedded_assets::EmbeddedAssetPlugin;
 
 mod belt_plugin;
 mod body_catalog;
@@ -21,14 +22,19 @@ mod ui_statusbar;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Solar System Simulator".into(),
-                resolution: (1600., 900.).into(),
-                ..default()
-            }),
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .build()
+                .add_before::<bevy::asset::AssetPlugin>(EmbeddedAssetPlugin::default())
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "Solar System Simulator".into(),
+                        resolution: (1600., 900.).into(),
+                        ..default()
+                    }),
+                    ..default()
+                }),
+        )
         .add_plugins((
             physics_plugin::PhysicsPlugin,
             render_plugin::CelestialRenderPlugin,

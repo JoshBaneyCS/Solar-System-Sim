@@ -1,37 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# macOS packaging script: creates a .dmg containing .app bundle + headless binary
+# macOS packaging script: creates a .dmg containing .app bundle
 # Usage: bash packaging/package-macos.sh
-# Expects: bin/solar-sim (GUI), bin/solar-sim-headless, assets/, Icon.png
+# Expects: bin/solar-sim (Bevy GUI binary with embedded assets)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
 
-GOARCH="${GOARCH:-$(go env GOARCH)}"
+# Detect architecture from the binary
+ARCH=$(file bin/solar-sim | grep -q "arm64" && echo "arm64" || echo "amd64")
 APP_NAME="Solar System Simulator"
 BUNDLE_NAME="SolarSystemSimulator.app"
-DMG_NAME="solar-sim-darwin-${GOARCH}.dmg"
+DMG_NAME="solar-sim-darwin-${ARCH}.dmg"
 STAGING="packaging/staging-macos"
 
-echo "Packaging macOS .dmg (${GOARCH})..."
+echo "Packaging macOS .dmg (${ARCH})..."
 
 # Clean staging
 rm -rf "$STAGING" "$DMG_NAME"
 mkdir -p "$STAGING/$BUNDLE_NAME/Contents/MacOS"
 mkdir -p "$STAGING/$BUNDLE_NAME/Contents/Resources"
 
-# Copy GUI binary
+# Copy GUI binary (assets are embedded)
 cp bin/solar-sim "$STAGING/$BUNDLE_NAME/Contents/MacOS/solar-sim"
 
-# Copy assets into Resources
-if [ -d assets ]; then
-    cp -r assets "$STAGING/$BUNDLE_NAME/Contents/Resources/assets"
-fi
-
 # Create Info.plist
-cat > "$STAGING/$BUNDLE_NAME/Contents/Info.plist" << 'PLIST'
+cat > "$STAGING/$BUNDLE_NAME/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -43,9 +39,9 @@ cat > "$STAGING/$BUNDLE_NAME/Contents/Info.plist" << 'PLIST'
     <key>CFBundleIdentifier</key>
     <string>com.joshbaney.solar-sim</string>
     <key>CFBundleVersion</key>
-    <string>1.0.0</string>
+    <string>0.1.5</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>0.1.5</string>
     <key>CFBundleExecutable</key>
     <string>solar-sim</string>
     <key>CFBundleIconFile</key>
@@ -78,7 +74,7 @@ if [ -f Icon.png ]; then
     rm -rf "$(dirname "$ICONSET_DIR")"
 fi
 
-# Copy headless binary alongside .app
+# Copy headless binary alongside .app (if it exists)
 if [ -f bin/solar-sim-headless ]; then
     cp bin/solar-sim-headless "$STAGING/solar-sim-headless"
 fi

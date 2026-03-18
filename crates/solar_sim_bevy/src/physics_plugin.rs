@@ -48,6 +48,12 @@ pub struct CelestialBody {
     pub sim_index: usize,
     pub name: String,
     pub body_type: BodyType,
+    /// Color for fallback rendering [r, g, b] in sRGB 0..1
+    pub color: [f32; 3],
+    /// Display radius in Bevy world units
+    pub display_radius: f32,
+    /// Texture directory name under assets/textures/ (empty = no texture)
+    pub texture_name: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -357,7 +363,7 @@ impl Plugin for PhysicsPlugin {
             .insert_resource(SimulationTime::default())
             .insert_resource(Time::<Fixed>::from_hz(60.0))
             .add_systems(Startup, spawn_solar_system)
-            .add_systems(FixedUpdate, (step_simulation, sync_ecs_from_simulation).chain())
+            .add_systems(FixedUpdate, (sync_sun_mass, step_simulation, sync_ecs_from_simulation).chain())
             .add_systems(Update, manage_dynamic_bodies);
     }
 }
@@ -397,6 +403,9 @@ fn spawn_solar_system(mut commands: Commands) {
             sim_index: usize::MAX,
             name: "Sun".into(),
             body_type: BodyType::Star,
+            color: [1.0, 0.9, 0.3],
+            display_radius: 0.5,
+            texture_name: "sun".into(),
         },
         Transform::from_xyz(0.0, 0.0, 0.0),
     ));
@@ -409,6 +418,9 @@ fn spawn_solar_system(mut commands: Commands) {
                 sim_index: idx,
                 name: p.name.into(),
                 body_type: p.body_type,
+                color: p.color,
+                display_radius: p.display_radius,
+                texture_name: p.texture_name.into(),
             },
             Transform::from_translation(render_pos),
             TrailBuffer::new(2000),
@@ -422,6 +434,17 @@ fn spawn_solar_system(mut commands: Commands) {
 // ---------------------------------------------------------------------------
 // Fixed-update systems
 // ---------------------------------------------------------------------------
+
+fn sync_sun_mass(
+    config: Res<SimulationConfig>,
+    sim_state: Option<ResMut<SimulationState>>,
+) {
+    let Some(mut sim) = sim_state else { return };
+    let target_mass = SUN_MASS * config.sun_mass_multiplier;
+    if (sim.inner.sun_mass - target_mass).abs() > 1.0 {
+        sim.inner.sun_mass = target_mass;
+    }
+}
 
 fn step_simulation(
     config: Res<SimulationConfig>,
@@ -537,6 +560,9 @@ fn manage_dynamic_bodies(
                     sim_index: idx,
                     name: moon_def.name.into(),
                     body_type: BodyType::Moon,
+                    color: moon_def.color,
+                    display_radius: moon_def.display_radius,
+                    texture_name: moon_def.texture_name.into(),
                 },
                 Transform::from_translation(render_pos),
                 TrailBuffer::new(2000),
@@ -566,6 +592,9 @@ fn manage_dynamic_bodies(
                     sim_index: idx,
                     name: comet_def.name.into(),
                     body_type: BodyType::Comet,
+                    color: comet_def.color,
+                    display_radius: comet_def.display_radius,
+                    texture_name: "".into(),
                 },
                 Transform::from_translation(physics_to_render(pos)),
                 TrailBuffer::new(2000),
@@ -595,6 +624,9 @@ fn manage_dynamic_bodies(
                     sim_index: idx,
                     name: asteroid_def.name.into(),
                     body_type: asteroid_def.body_type,
+                    color: asteroid_def.color,
+                    display_radius: asteroid_def.display_radius,
+                    texture_name: asteroid_def.texture_name.into(),
                 },
                 Transform::from_translation(physics_to_render(pos)),
                 TrailBuffer::new(2000),

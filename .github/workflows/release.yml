@@ -18,19 +18,19 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            goarch: arm64
+            target: aarch64-apple-darwin
             platform: macos
             artifact: solar-sim-darwin-arm64.dmg
-          - os: macos-latest
-            goarch: amd64
+          - os: macos-13
+            target: x86_64-apple-darwin
             platform: macos
             artifact: solar-sim-darwin-amd64.dmg
           - os: ubuntu-latest
-            goarch: amd64
+            target: x86_64-unknown-linux-gnu
             platform: linux
             artifact: solar-sim-linux-amd64.tar.gz
           - os: windows-latest
-            goarch: amd64
+            target: x86_64-pc-windows-msvc
             platform: windows
             artifact: solar-sim-windows-amd64.zip
 
@@ -39,22 +39,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev
-
-      - name: Install Windows dependencies
-        if: runner.os == 'Windows'
-        run: choco install mingw -y
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
       - name: Cache Rust build
         uses: actions/cache@v4
@@ -62,97 +50,78 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            crates/physics_core/target
-            crates/render_core/target
-          key: ${{ runner.os }}-${{ matrix.goarch }}-rust-${{ hashFiles('crates/*/Cargo.lock', 'crates/*/Cargo.toml') }}
-          restore-keys: ${{ runner.os }}-${{ matrix.goarch }}-rust-
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.target }}-cargo-
 
-      - name: Build Rust physics_core
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
         run: |
-          cd crates/physics_core && cargo build --release
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libasound2-dev \
+            libudev-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libx11-dev \
+            libxi-dev \
+            libxcursor-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libgl1-mesa-dev \
+            libatk1.0-dev \
+            libgtk-3-dev
 
-      - name: Build Rust render_core
-        run: |
-          cd crates/render_core && cargo build --release
-
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
-          restore-keys: ${{ runner.os }}-go-
-
-      - name: Build GUI binary
+      - name: Build Bevy app (release)
         shell: bash
         env:
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "1"
+          CARGO_BUILD_TARGET: ${{ matrix.target }}
+        run: |
+          cargo build --release -p solar_sim_bevy --target ${{ matrix.target }}
+
+      - name: Prepare binary
+        shell: bash
         run: |
           mkdir -p bin
-          EXT=""
           if [ "${{ runner.os }}" = "Windows" ]; then
-            EXT=".exe"
-            export CC=gcc
+            cp target/${{ matrix.target }}/release/solar_sim_bevy.exe bin/solar-sim.exe
+          else
+            cp target/${{ matrix.target }}/release/solar_sim_bevy bin/solar-sim
+            chmod +x bin/solar-sim
           fi
-          # Cross-compile amd64 on Apple Silicon macOS
-          if [ "$GOARCH" = "amd64" ] && [ "$(uname -m)" = "arm64" ] && [ "${{ runner.os }}" = "macOS" ]; then
-            export CGO_CFLAGS="-arch x86_64"
-            export CGO_LDFLAGS="-arch x86_64"
-          fi
-          go build -o "bin/solar-sim${EXT}" ./cmd/solar-sim
 
-      - name: Build headless binary
+      - name: Build Go headless binary
+        if: runner.os != 'Windows'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Compile Go headless binary
+        if: runner.os != 'Windows'
         shell: bash
         env:
-          GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
         run: |
           EXT=""
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            EXT=".exe"
-          fi
-          go build -tags nogui -o "bin/solar-sim-headless${EXT}" ./cmd/solar-sim
+          go build -tags nogui -o "bin/solar-sim-headless${EXT}" ./cmd/solar-sim || true
 
       - name: Package
         shell: bash
-        env:
-          GOARCH: ${{ matrix.goarch }}
         run: bash packaging/package-${{ matrix.platform }}.sh
 
-      - name: Bundle Rust shared libraries
-        shell: bash
-        run: |
-          echo "=== Bundling Rust shared libraries ==="
-          STAGING="staging-libs"
-          mkdir -p "$STAGING"
-          if [ "${{ runner.os }}" = "macOS" ]; then
-            # .dylib files for macOS
-            cp -v crates/physics_core/target/release/libphysics_core.dylib "$STAGING/" 2>/dev/null || true
-            cp -v crates/render_core/target/release/librender_core.dylib "$STAGING/" 2>/dev/null || true
-          elif [ "${{ runner.os }}" = "Linux" ]; then
-            # .so files for Linux
-            cp -v crates/physics_core/target/release/libphysics_core.so "$STAGING/" 2>/dev/null || true
-            cp -v crates/render_core/target/release/librender_core.so "$STAGING/" 2>/dev/null || true
-          elif [ "${{ runner.os }}" = "Windows" ]; then
-            # .dll files for Windows
-            cp -v crates/physics_core/target/release/physics_core.dll "$STAGING/" 2>/dev/null || true
-            cp -v crates/render_core/target/release/render_core.dll "$STAGING/" 2>/dev/null || true
-          fi
-          echo "Bundled libraries:"
-          ls -la "$STAGING/" || echo "No libraries to bundle"
-
-      - name: Validate package contents
+      - name: Validate package
         shell: bash
         run: |
           echo "=== Validating ${{ matrix.artifact }} ==="
           if [ -f "${{ matrix.artifact }}" ]; then
-            echo "Artifact exists: $(ls -la ${{ matrix.artifact }})"
             SIZE=$(stat -f%z "${{ matrix.artifact }}" 2>/dev/null || stat -c%s "${{ matrix.artifact }}" 2>/dev/null || echo 0)
-            if [ "$SIZE" -lt 1000 ]; then
+            echo "Artifact size: $SIZE bytes"
+            if [ "$SIZE" -lt 10000 ]; then
               echo "ERROR: Artifact is suspiciously small ($SIZE bytes)"
               exit 1
             fi
-            echo "Artifact size: $SIZE bytes - OK"
+            echo "OK"
           else
             echo "ERROR: Artifact not found: ${{ matrix.artifact }}"
             exit 1
@@ -189,22 +158,22 @@ jobs:
             artifacts/solar-sim-linux-amd64.tar.gz
             artifacts/solar-sim-windows-amd64.zip
           body: |
-            ## Downloads
+            ## Solar System Simulator ${{ github.ref_name }}
+
+            GPU-accelerated, physically accurate N-body solar system simulator built with Rust and Bevy.
+
+            ### Downloads
 
             | Platform | File | Notes |
             |----------|------|-------|
             | macOS (Apple Silicon) | `solar-sim-darwin-arm64.dmg` | macOS 12+, right-click > Open on first launch |
             | macOS (Intel) | `solar-sim-darwin-amd64.dmg` | macOS 12+, right-click > Open on first launch |
-            | Linux (x86_64) | `solar-sim-linux-amd64.tar.gz` | Requires OpenGL 2.1+ |
+            | Linux (x86_64) | `solar-sim-linux-amd64.tar.gz` | Requires Vulkan or OpenGL drivers |
             | Windows (x86_64) | `solar-sim-windows-amd64.zip` | Windows 10+ |
 
-            Each archive includes both `solar-sim` (GUI) and `solar-sim-headless` (CLI-only) binaries, plus the `assets/` directory with planet textures and meshes.
+            All textures and assets are embedded in the binary — no additional files needed.
 
             ### Quick Start
-            ```bash
-            # GUI mode
-            solar-sim gui
-
-            # Headless simulation
-            solar-sim-headless run --years 1 --export output.csv
-            ```
+            - **macOS**: Open the DMG, drag to Applications, double-click to launch
+            - **Linux**: Extract and run `./solar-sim`
+            - **Windows**: Extract and run `solar-sim.exe`

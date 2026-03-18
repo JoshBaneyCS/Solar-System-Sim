@@ -1,34 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Windows packaging script: creates a .zip with .exe, assets
+# Windows packaging script: creates a .zip with .exe
 # Usage: bash packaging/package-windows.sh
-# Expects: bin/solar-sim.exe, bin/solar-sim-headless.exe, assets/
+# Expects: bin/solar-sim.exe (Bevy GUI binary with embedded assets)
 # Runs under Git Bash on Windows CI runners
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
 
-GOARCH="${GOARCH:-amd64}"
-ARCHIVE_NAME="solar-sim-windows-${GOARCH}"
+ARCH="${GOARCH:-amd64}"
+ARCHIVE_NAME="solar-sim-windows-${ARCH}"
 STAGING="packaging/staging-windows"
 
-echo "Packaging Windows .zip (${GOARCH})..."
+echo "Packaging Windows .zip (${ARCH})..."
 
 # Clean staging
 rm -rf "$STAGING" "${ARCHIVE_NAME}.zip"
 mkdir -p "$STAGING/$ARCHIVE_NAME"
 
-# Copy binaries
+# Copy binary (assets are embedded)
 cp bin/solar-sim.exe "$STAGING/$ARCHIVE_NAME/"
+
 if [ -f bin/solar-sim-headless.exe ]; then
     cp bin/solar-sim-headless.exe "$STAGING/$ARCHIVE_NAME/"
-fi
-
-# Copy assets
-if [ -d assets ]; then
-    cp -r assets "$STAGING/$ARCHIVE_NAME/assets"
 fi
 
 # Copy icon
@@ -38,14 +34,17 @@ fi
 
 # Create README
 cat > "$STAGING/$ARCHIVE_NAME/README.txt" << 'EOF'
-Solar System Simulator
-======================
+Solar System Simulator v0.1.5
+=============================
 
-Run the GUI:
-  solar-sim.exe gui
+Run the simulator:
+  Double-click solar-sim.exe
 
-Run headless simulation:
-  solar-sim-headless.exe run --years 1 --export output.csv
+All textures and assets are embedded in the binary.
+
+System requirements:
+  - Windows 10 or later
+  - DirectX 12, Vulkan, or OpenGL 3.3+ capable GPU
 
 For more information, see: https://github.com/joshbaney/solar-system-simulator
 EOF
