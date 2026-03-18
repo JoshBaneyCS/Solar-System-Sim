@@ -7,7 +7,7 @@ members = [
 ]
 
 [workspace.dependencies]
-bevy = "0.15"
+bevy = { version = "0.15", features = ["jpeg"] }
 bevy_egui = "0.33"
 rayon = "1.10"
 serde = { version = "1", features = ["derive"] }
