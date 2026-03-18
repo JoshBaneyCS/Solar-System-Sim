@@ -12,7 +12,7 @@
 <!-- Project Logo & Title -->
 <br />
 <div align="center">
-  <a href="https://github.com/joshbaney/solar-system-simulator">
+  <a href="https://github.com/JoshBaneyCS/Solar-System-Sim">
     <img src="media/Image.png" alt="Solar System Simulator" width="600">
   </a>
 
@@ -25,11 +25,11 @@
     <strong>Rust + Bevy Engine</strong>
     <br />
     <br />
-    <a href="https://github.com/joshbaney/solar-system-simulator/releases">Download</a>
+    <a href="https://github.com/JoshBaneyCS/Solar-System-Sim/releases">Download</a>
     &middot;
-    <a href="https://github.com/joshbaney/solar-system-simulator/issues/new?labels=bug">Report Bug</a>
+    <a href="https://github.com/JoshBaneyCS/Solar-System-Sim/issues/new?labels=bug">Report Bug</a>
     &middot;
-    <a href="https://github.com/joshbaney/solar-system-simulator/issues/new?labels=enhancement">Request Feature</a>
+    <a href="https://github.com/JoshBaneyCS/Solar-System-Sim/issues/new?labels=enhancement">Request Feature</a>
   </p>
 </div>
 
@@ -132,7 +132,7 @@ All planet textures, the milky way skybox, and mesh data are **embedded directly
 
 ### Pre-built Downloads
 
-Download from [GitHub Releases](https://github.com/joshbaney/solar-system-simulator/releases):
+Download from [GitHub Releases](https://github.com/JoshBaneyCS/Solar-System-Sim/releases):
 
 | Platform | File |
 |----------|------|
@@ -148,7 +148,7 @@ All assets are embedded — no additional files needed. Just download and run.
 **Prerequisites:** Rust 1.75+ (install via [rustup](https://rustup.rs/))
 
 ```bash
-git clone https://github.com/joshbaney/solar-system-simulator.git
+git clone https://github.com/JoshBaneyCS/Solar-System-Sim.git
 cd solar-system-simulator
 
 # Run in development mode
@@ -305,7 +305,7 @@ docs/                  Documentation
 - [ ] Gravitational wave visualization
 - [ ] VR support
 
-See the [open issues](https://github.com/joshbaney/solar-system-simulator/issues) for a full list of proposed features and known issues.
+See the [open issues](https://github.com/JoshBaneyCS/Solar-System-Sim/issues) for a full list of proposed features and known issues.
 
 ---
 
@@ -347,7 +347,7 @@ Distributed under the **GNU Affero General Public License v3.0**. See [LICENSE](
 
 **Joshua Baney** — [GitHub](https://github.com/JoshBaneyCS/)
 
-Project Link: [https://github.com/joshbaney/solar-system-simulator](https://github.com/joshbaney/solar-system-simulator)
+Project Link: [https://github.com/JoshBaneyCS/Solar-System-Sim](https://github.com/JoshBaneyCS/Solar-System-Sim)
 
 ---
 
@@ -360,13 +360,13 @@ Help fund ongoing development:
 ---
 
 <!-- Reference-style links -->
-[contributors-shield]: https://img.shields.io/github/contributors/joshbaney/solar-system-simulator.svg?style=for-the-badge
-[contributors-url]: https://github.com/joshbaney/solar-system-simulator/graphs/contributors
+[contributors-shield]: https://img.shields.io/github/contributors/JoshBaneyCS/Solar-System-Sim.svg?style=for-the-badge
+[contributors-url]: https://github.com/JoshBaneyCS/graphs/contributors
 [forks-shield]: https://img.shields.io/github/forks/joshbaney/solar-system-simulator.svg?style=for-the-badge
-[forks-url]: https://github.com/joshbaney/solar-system-simulator/network/members
+[forks-url]: https://github.com/JoshBaneyCS/network/members
 [stars-shield]: https://img.shields.io/github/stars/joshbaney/solar-system-simulator.svg?style=for-the-badge
-[stars-url]: https://github.com/joshbaney/solar-system-simulator/stargazers
+[stars-url]: https://github.com/JoshBaneyCS/solar-system-simulator/stargazers
 [issues-shield]: https://img.shields.io/github/issues/joshbaney/solar-system-simulator.svg?style=for-the-badge
-[issues-url]: https://github.com/joshbaney/solar-system-simulator/issues
+[issues-url]: https://github.com/JoshBaneyCS/solar-system-simulator/issues
 [license-shield]: https://img.shields.io/github/license/joshbaney/solar-system-simulator.svg?style=for-the-badge
-[license-url]: https://github.com/joshbaney/solar-system-simulator/blob/master/LICENSE
+[license-url]: https://github.com/JoshBaneyCS/solar-system-simulator/blob/master/LICENSE
