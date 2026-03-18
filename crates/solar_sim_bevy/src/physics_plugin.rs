@@ -810,8 +810,6 @@ fn handle_reset_simulation(
     mut bh_registry: ResMut<BlackHoleRegistry>,
     mut config: ResMut<SimulationConfig>,
     all_bodies: Query<Entity, With<CelestialBody>>,
-    dynamic_bodies: Query<Entity, With<DynamicBody>>,
-    sun_query: Query<Entity, With<Sun>>,
 ) {
     if events.read().next().is_none() {
         return;
@@ -819,16 +817,8 @@ fn handle_reset_simulation(
     // Consume remaining events
     events.read().for_each(|_| {});
 
-    // Despawn all existing celestial bodies (planets, moons, comets, asteroids)
+    // CelestialBody is on ALL bodies (Sun, planets, moons, comets, asteroids)
     for entity in all_bodies.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    // Despawn dynamic bodies that might not have CelestialBody
-    for entity in dynamic_bodies.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    // Despawn sun entities
-    for entity in sun_query.iter() {
         commands.entity(entity).despawn_recursive();
     }
 
