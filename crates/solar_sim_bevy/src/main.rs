@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use bevy_embedded_assets::EmbeddedAssetPlugin;
 
 mod belt_plugin;
+mod blackhole_plugin;
 mod body_catalog;
 mod camera_plugin;
 mod follow_plugin;
@@ -38,6 +39,7 @@ fn main() {
         .add_plugins((
             physics_plugin::PhysicsPlugin,
             render_plugin::CelestialRenderPlugin,
+            blackhole_plugin::BlackHolePlugin,
             camera_plugin::CameraPlugin,
             skybox_plugin::SkyboxPlugin,
             ui_plugin::UIPlugin,

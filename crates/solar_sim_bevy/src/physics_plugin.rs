@@ -23,7 +23,10 @@ const BASE_TIME_STEP: f64 = 7200.0;
 const MAX_SAFE_DT: f64 = 28800.0;
 
 /// Sun mass in kg.
-const SUN_MASS: f64 = 1.989e30;
+pub const SUN_MASS: f64 = 1.989e30;
+
+/// Speed of light in m/s.
+pub const C_LIGHT: f64 = 299_792_458.0;
 
 // ---------------------------------------------------------------------------
 // Public helpers (used by other plugins)
@@ -129,6 +132,47 @@ pub struct SimulationState {
 #[derive(Resource, Default)]
 pub struct SimulationTime {
     pub elapsed_seconds: f64,
+}
+
+// ---------------------------------------------------------------------------
+// Black hole support
+// ---------------------------------------------------------------------------
+
+/// Marker component for entities converted to black holes.
+#[derive(Component)]
+pub struct BlackHoleMarker;
+
+/// Info about a single active black hole.
+pub struct BlackHoleInfo {
+    pub body_name: String,
+    /// Mass of the black hole in solar masses.
+    pub mass_solar: f64,
+    /// Original mass of the body in kg (for restoration).
+    pub original_mass_kg: f64,
+    /// Original display radius (for restoration).
+    pub original_display_radius: f32,
+    /// Whether orbiting body velocities have been scaled for this black hole.
+    pub velocities_adjusted: bool,
+}
+
+/// Registry of active black holes + UI state.
+#[derive(Resource)]
+pub struct BlackHoleRegistry {
+    pub active: Vec<BlackHoleInfo>,
+    /// UI: currently selected body name for conversion.
+    pub ui_selected_body: String,
+    /// UI: mass setting for new black holes (solar masses).
+    pub ui_mass_solar: f64,
+}
+
+impl Default for BlackHoleRegistry {
+    fn default() -> Self {
+        Self {
+            active: Vec::new(),
+            ui_selected_body: String::new(),
+            ui_mass_solar: 1000.0,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -352,6 +396,14 @@ pub(crate) fn create_planet_from_elements(p: &PlanetDef, sun_mass: f64) -> (PVec
 }
 
 // ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+
+/// Fired to reset the entire simulation back to initial conditions.
+#[derive(Event)]
+pub struct ResetSimulationEvent;
+
+// ---------------------------------------------------------------------------
 // Plugin
 // ---------------------------------------------------------------------------
 
@@ -361,10 +413,12 @@ impl Plugin for PhysicsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SimulationConfig::default())
             .insert_resource(SimulationTime::default())
+            .insert_resource(BlackHoleRegistry::default())
             .insert_resource(Time::<Fixed>::from_hz(60.0))
+            .add_event::<ResetSimulationEvent>()
             .add_systems(Startup, spawn_solar_system)
-            .add_systems(FixedUpdate, (sync_sun_mass, step_simulation, sync_ecs_from_simulation).chain())
-            .add_systems(Update, manage_dynamic_bodies);
+            .add_systems(FixedUpdate, (sync_sun_mass, step_simulation, sync_ecs_from_simulation, push_moons_outside_parents).chain())
+            .add_systems(Update, (manage_dynamic_bodies, handle_reset_simulation));
     }
 }
 
@@ -438,11 +492,46 @@ fn spawn_solar_system(mut commands: Commands) {
 fn sync_sun_mass(
     config: Res<SimulationConfig>,
     sim_state: Option<ResMut<SimulationState>>,
+    mut bh_registry: ResMut<BlackHoleRegistry>,
+    body_query: Query<&CelestialBody>,
 ) {
     let Some(mut sim) = sim_state else { return };
-    let target_mass = SUN_MASS * config.sun_mass_multiplier;
-    if (sim.inner.sun_mass - target_mass).abs() > 1.0 {
-        sim.inner.sun_mass = target_mass;
+
+    // Sun mass: black hole override takes priority over multiplier slider
+    let sun_bh = bh_registry.active.iter().find(|h| h.body_name == "Sun");
+    if let Some(hole) = sun_bh {
+        sim.inner.sun_mass = hole.mass_solar * SUN_MASS;
+
+        // Scale planet velocities once so they orbit at the new mass
+        // v_circ = sqrt(G*M/r), so v_new = v_old * sqrt(M_new/M_old)
+        if !hole.velocities_adjusted {
+            let scale = (hole.mass_solar as f64).sqrt();
+            for i in 0..sim.inner.n_bodies {
+                sim.inner.velocities[i] = sim.inner.velocities[i].mul(scale);
+            }
+        }
+    } else {
+        let target_mass = SUN_MASS * config.sun_mass_multiplier;
+        if (sim.inner.sun_mass - target_mass).abs() > 1.0 {
+            sim.inner.sun_mass = target_mass;
+        }
+    }
+
+    // Mark Sun BH velocities as adjusted (separate pass for borrow checker)
+    if let Some(hole) = bh_registry.active.iter_mut().find(|h| h.body_name == "Sun") {
+        hole.velocities_adjusted = true;
+    }
+
+    // Planet black hole mass overrides
+    for hole in bh_registry.active.iter() {
+        if hole.body_name == "Sun" {
+            continue;
+        }
+        for body in body_query.iter() {
+            if body.name == hole.body_name && body.sim_index < sim.inner.n_bodies {
+                sim.inner.masses[body.sim_index] = hole.mass_solar * SUN_MASS;
+            }
+        }
     }
 }
 
@@ -487,6 +576,41 @@ fn sync_ecs_from_simulation(
     }
 }
 
+/// After syncing physics positions, push moons outward so they don't clip
+/// inside their parent planet's display sphere. Preserves orbital direction.
+fn push_moons_outside_parents(
+    mut moon_query: Query<(&CelestialBody, &MoonOf, &mut Transform)>,
+    parent_query: Query<(&CelestialBody, &Transform), Without<MoonOf>>,
+) {
+    // Build a quick lookup: sim_index -> (render_position, display_radius)
+    let parents: Vec<(usize, Vec3, f32)> = parent_query
+        .iter()
+        .map(|(body, tf)| (body.sim_index, tf.translation, body.display_radius))
+        .collect();
+
+    for (moon_body, moon_of, mut moon_tf) in &mut moon_query {
+        let Some(&(_, parent_pos, parent_radius)) = parents
+            .iter()
+            .find(|(idx, _, _)| *idx == moon_of.parent_sim_index)
+        else {
+            continue;
+        };
+
+        let offset = moon_tf.translation - parent_pos;
+        let dist = offset.length();
+        if dist < 1e-6 {
+            continue;
+        }
+
+        // Minimum distance: parent visual radius + moon visual radius + small gap
+        let min_dist = parent_radius + moon_body.display_radius + 0.05;
+        if dist < min_dist {
+            // Push moon outward along the same direction
+            moon_tf.translation = parent_pos + offset.normalize() * min_dist;
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Dynamic body spawning (moons, comets, asteroids)
 // ---------------------------------------------------------------------------
@@ -502,6 +626,12 @@ struct DynamicBodyState {
 /// Marker for dynamically spawned bodies so we can despawn them.
 #[derive(Component)]
 pub struct DynamicBody;
+
+/// Links a moon to its parent body's sim index so we can push it outward visually.
+#[derive(Component)]
+pub struct MoonOf {
+    pub parent_sim_index: usize,
+}
 
 fn manage_dynamic_bodies(
     mut commands: Commands,
@@ -522,14 +652,14 @@ fn manage_dynamic_bodies(
         for moon_def in MOON_DATA.iter() {
             // Find parent body position/velocity in the simulation
             let parent_state = planet_query.iter().find(|(b, _)| b.name == moon_def.parent_name);
-            let (parent_pos, parent_vel) = if let Some((body, _)) = parent_state {
+            let (parent_pos, parent_vel, parent_sim_index) = if let Some((body, _)) = parent_state {
                 if body.sim_index < sim.inner.n_bodies {
-                    (sim.inner.positions[body.sim_index], sim.inner.velocities[body.sim_index])
+                    (sim.inner.positions[body.sim_index], sim.inner.velocities[body.sim_index], body.sim_index)
                 } else {
-                    (PVec3::default(), PVec3::default())
+                    (PVec3::default(), PVec3::default(), 0)
                 }
             } else if moon_def.parent_name == "Sun" {
-                (PVec3::default(), PVec3::default())
+                (PVec3::default(), PVec3::default(), 0)
             } else {
                 continue;
             };
@@ -567,6 +697,7 @@ fn manage_dynamic_bodies(
                 Transform::from_translation(render_pos),
                 TrailBuffer::new(2000),
                 DynamicBody,
+                MoonOf { parent_sim_index },
             ));
         }
         state.moons_spawned = true;
@@ -666,6 +797,103 @@ fn remove_bodies_by_type(
             sim.n_bodies -= 1;
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Reset simulation
+// ---------------------------------------------------------------------------
+
+fn handle_reset_simulation(
+    mut commands: Commands,
+    mut events: EventReader<ResetSimulationEvent>,
+    mut sim_time: ResMut<SimulationTime>,
+    mut bh_registry: ResMut<BlackHoleRegistry>,
+    mut config: ResMut<SimulationConfig>,
+    all_bodies: Query<Entity, With<CelestialBody>>,
+    dynamic_bodies: Query<Entity, With<DynamicBody>>,
+    sun_query: Query<Entity, With<Sun>>,
+) {
+    if events.read().next().is_none() {
+        return;
+    }
+    // Consume remaining events
+    events.read().for_each(|_| {});
+
+    // Despawn all existing celestial bodies (planets, moons, comets, asteroids)
+    for entity in all_bodies.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+    // Despawn dynamic bodies that might not have CelestialBody
+    for entity in dynamic_bodies.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+    // Despawn sun entities
+    for entity in sun_query.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+
+    // Recreate the simulation from scratch (same as spawn_solar_system)
+    let mut masses = Vec::with_capacity(PLANET_DATA.len());
+    let mut positions = Vec::with_capacity(PLANET_DATA.len());
+    let mut velocities = Vec::with_capacity(PLANET_DATA.len());
+    let mut gr_flags = Vec::with_capacity(PLANET_DATA.len());
+
+    for p in PLANET_DATA.iter() {
+        let (pos, vel) = create_planet_from_elements(p, SUN_MASS);
+        masses.push(p.mass);
+        positions.push(pos);
+        velocities.push(vel);
+        gr_flags.push(p.name == "Mercury");
+    }
+
+    let sim = Simulation::new(
+        PLANET_DATA.len(),
+        SUN_MASS,
+        masses,
+        positions.clone(),
+        velocities,
+        gr_flags,
+        true,
+    );
+
+    // Spawn Sun entity
+    commands.spawn((
+        Sun,
+        CelestialBody {
+            sim_index: usize::MAX,
+            name: "Sun".into(),
+            body_type: BodyType::Star,
+            color: [1.0, 0.9, 0.3],
+            display_radius: 0.5,
+            texture_name: "sun".into(),
+        },
+        Transform::from_xyz(0.0, 0.0, 0.0),
+    ));
+
+    // Spawn planet entities
+    for (idx, p) in PLANET_DATA.iter().enumerate() {
+        let render_pos = physics_to_render(positions[idx]);
+        commands.spawn((
+            CelestialBody {
+                sim_index: idx,
+                name: p.name.into(),
+                body_type: p.body_type,
+                color: p.color,
+                display_radius: p.display_radius,
+                texture_name: p.texture_name.into(),
+            },
+            Transform::from_translation(render_pos),
+            TrailBuffer::new(2000),
+        ));
+    }
+
+    // Reset resources
+    commands.insert_resource(SimulationState { inner: sim });
+    commands.insert_resource(DynamicBodyState::default());
+    sim_time.elapsed_seconds = 0.0;
+    bh_registry.active.clear();
+    bh_registry.ui_selected_body.clear();
+    config.sun_mass_multiplier = 1.0;
 }
 
 /// Create moon position/velocity relative to parent.

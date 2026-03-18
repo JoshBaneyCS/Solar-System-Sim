@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::physics_plugin::{BodyType, CelestialBody, SimulationConfig};
+use crate::physics_plugin::{BlackHoleMarker, BodyType, CelestialBody, SimulationConfig};
 
 // ---------------------------------------------------------------------------
 // Components
@@ -8,7 +8,7 @@ use crate::physics_plugin::{BodyType, CelestialBody, SimulationConfig};
 
 /// Marker: this entity has been assigned a mesh by the render plugin.
 #[derive(Component)]
-struct RenderInitialized;
+pub(crate) struct RenderInitialized;
 
 /// Stores the display scale for a celestial body so we can re-apply it
 /// after the physics plugin updates the Transform translation.
@@ -63,12 +63,25 @@ fn attach_meshes_to_bodies(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     asset_server: Res<AssetServer>,
-    query: Query<(Entity, &CelestialBody), Without<RenderInitialized>>,
+    query: Query<(Entity, &CelestialBody, Option<&BlackHoleMarker>), Without<RenderInitialized>>,
 ) {
     let sphere_mesh = meshes.add(Sphere::new(1.0).mesh().uv(32, 18));
 
-    for (entity, body) in &query {
-        if body.body_type == BodyType::Star {
+    for (entity, body, bh_marker) in &query {
+        // Black hole: unlit black sphere, no spin
+        if bh_marker.is_some() {
+            commands.entity(entity).insert((
+                Mesh3d(sphere_mesh.clone()),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: Color::BLACK,
+                    emissive: LinearRgba::NONE,
+                    unlit: true,
+                    ..default()
+                })),
+                DisplayScale(body.display_radius),
+                RenderInitialized,
+            ));
+        } else if body.body_type == BodyType::Star {
             // Sun: textured emissive sphere
             let texture: Handle<Image> = asset_server.load("textures/sun/albedo.jpg");
             commands.entity(entity).insert((
@@ -88,7 +101,7 @@ fn attach_meshes_to_bodies(
             // Use render info stored on the CelestialBody component
             let c = body.color;
             let material = if !body.texture_name.is_empty() {
-                let ext = if body.texture_name == "earth" { "png" } else { "jpg" };
+                let ext = "jpg";
                 let texture_path = format!("textures/{}/albedo.{}", body.texture_name, ext);
                 let texture: Handle<Image> = asset_server.load(&texture_path);
                 StandardMaterial {

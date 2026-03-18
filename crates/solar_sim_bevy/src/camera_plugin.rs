@@ -134,7 +134,7 @@ fn camera_rotate(
         motion_events.clear();
         return;
     }
-    if !mouse_button.pressed(MouseButton::Right) {
+    if !mouse_button.pressed(MouseButton::Right) && !mouse_button.pressed(MouseButton::Left) {
         // Drain events to avoid stale deltas
         motion_events.clear();
         return;

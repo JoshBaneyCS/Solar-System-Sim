@@ -362,11 +362,11 @@ Help fund ongoing development:
 <!-- Reference-style links -->
 [contributors-shield]: https://img.shields.io/github/contributors/JoshBaneyCS/Solar-System-Sim.svg?style=for-the-badge
 [contributors-url]: https://github.com/JoshBaneyCS/Solar-System-Sim/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/joshbaney/solar-system-simulator.svg?style=for-the-badge
+[forks-shield]: https://img.shields.io/github/forks/JoshBaneyCS/Solar-System-Sim.svg?style=for-the-badge
 [forks-url]: https://github.com/JoshBaneyCS/Solar-System-Sim/network/members
-[stars-shield]: https://img.shields.io/github/stars/joshbaney/solar-system-simulator.svg?style=for-the-badge
+[stars-shield]: https://img.shields.io/github/stars/JoshBaneyCS/Solar-System-Sim.svg?style=for-the-badge
 [stars-url]: https://github.com/JoshBaneyCS/Solar-System-Sim/stargazers
-[issues-shield]: https://img.shields.io/github/issues/joshbaney/solar-system-simulator.svg?style=for-the-badge
+[issues-shield]: https://img.shields.io/github/issues/JoshBaneyCS/Solar-System-Sim.svg?style=for-the-badge
 [issues-url]: https://github.com/JoshBaneyCS/Solar-System-Sim/issues
-[license-shield]: https://img.shields.io/github/license/joshbaney/solar-system-simulator.svg?style=for-the-badge
+[license-shield]: https://img.shields.io/github/license/JoshBaneyCS/Solar-System-Sim.svg?style=for-the-badge
 [license-url]: https://github.com/JoshBaneyCS/Solar-System-Sim/blob/master/LICENSE
