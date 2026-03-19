@@ -32,7 +32,10 @@ pub struct BeltPlugin;
 impl Plugin for BeltPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(PostStartup, spawn_belt_particles)
-            .add_systems(Update, (update_belt_visibility, update_belt_positions).chain());
+            .add_systems(
+                Update,
+                (update_belt_visibility, update_belt_positions).chain(),
+            );
     }
 }
 
@@ -156,8 +159,7 @@ fn belt_particle_position(p: &BeltParticle, sim_time: f64) -> Vec3 {
 
     // True anomaly
     let nu = 2.0
-        * ((1.0 + e).sqrt() * (big_e / 2.0).sin())
-            .atan2((1.0 - e).sqrt() * (big_e / 2.0).cos());
+        * ((1.0 + e).sqrt() * (big_e / 2.0).sin()).atan2((1.0 - e).sqrt() * (big_e / 2.0).cos());
 
     // Radial distance
     let r = a * (1.0 - e * big_e.cos());

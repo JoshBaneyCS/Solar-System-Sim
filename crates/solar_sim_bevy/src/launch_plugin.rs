@@ -2,8 +2,7 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 
 use crate::launch_core::{
-    self, LaunchPlan, Trajectory, ReferenceFrame,
-    DESTINATIONS, VEHICLES, EARTH_ORBIT_SMA,
+    self, LaunchPlan, ReferenceFrame, Trajectory, DESTINATIONS, EARTH_ORBIT_SMA, VEHICLES,
 };
 use crate::physics_plugin::{AU, RENDER_SCALE};
 
@@ -49,8 +48,10 @@ pub struct LaunchPlugin;
 
 impl Plugin for LaunchPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(LaunchState::default())
-            .add_systems(Update, (launch_panel, draw_trajectory, update_playback).chain());
+        app.insert_resource(LaunchState::default()).add_systems(
+            Update,
+            (launch_panel, draw_trajectory, update_playback).chain(),
+        );
     }
 }
 
@@ -58,10 +59,7 @@ impl Plugin for LaunchPlugin {
 // UI Panel
 // ---------------------------------------------------------------------------
 
-fn launch_panel(
-    mut contexts: EguiContexts,
-    mut state: ResMut<LaunchState>,
-) {
+fn launch_panel(mut contexts: EguiContexts, mut state: ResMut<LaunchState>) {
     let ctx = contexts.ctx_mut();
 
     egui::Window::new("Launch Planner")
@@ -142,13 +140,23 @@ fn launch_panel(
                 ui.strong("Mission Playback");
 
                 ui.horizontal(|ui| {
-                    if ui.button(if state.playback_playing { "Pause" } else { "Play" }).clicked() {
+                    if ui
+                        .button(if state.playback_playing {
+                            "Pause"
+                        } else {
+                            "Play"
+                        })
+                        .clicked()
+                    {
                         state.playback_playing = !state.playback_playing;
                     }
                 });
 
                 let mut speed_exp = (state.playback_speed.log2()) as f32;
-                if ui.add(egui::Slider::new(&mut speed_exp, 0.0..=6.0).text("Speed 2^x")).changed() {
+                if ui
+                    .add(egui::Slider::new(&mut speed_exp, 0.0..=6.0).text("Speed 2^x"))
+                    .changed()
+                {
                     state.playback_speed = 2.0_f64.powf(speed_exp as f64);
                 }
 
@@ -162,7 +170,10 @@ fn launch_panel(
 
                 if let Some((total_time, interp)) = traj_info {
                     let mut progress = (state.playback_time / total_time * 100.0) as f32;
-                    if ui.add(egui::Slider::new(&mut progress, 0.0..=100.0).text("Timeline %")).changed() {
+                    if ui
+                        .add(egui::Slider::new(&mut progress, 0.0..=100.0).text("Timeline %"))
+                        .changed()
+                    {
                         state.playback_time = progress as f64 / 100.0 * total_time;
                     }
 
@@ -187,18 +198,21 @@ fn launch_panel(
 // Trajectory rendering
 // ---------------------------------------------------------------------------
 
-fn draw_trajectory(
-    state: Res<LaunchState>,
-    mut gizmos: Gizmos,
-) {
-    let Some(traj) = &state.trajectory else { return };
+fn draw_trajectory(state: Res<LaunchState>, mut gizmos: Gizmos) {
+    let Some(traj) = &state.trajectory else {
+        return;
+    };
 
-    let points: Vec<Vec3> = traj.points.iter().map(|p| {
-        trajectory_to_render(p.position, traj.frame)
-    }).collect();
+    let points: Vec<Vec3> = traj
+        .points
+        .iter()
+        .map(|p| trajectory_to_render(p.position, traj.frame))
+        .collect();
 
     let total = points.len();
-    if total < 2 { return; }
+    if total < 2 {
+        return;
+    }
 
     for i in 0..total - 1 {
         let t = i as f32 / total as f32;
@@ -218,7 +232,11 @@ fn draw_trajectory(
         if let Some(traj_data) = &state.trajectory {
             if let Some((pos, _)) = interpolate_trajectory(traj_data, state.playback_time) {
                 let render_pos = trajectory_to_render(pos, traj.frame);
-                gizmos.sphere(Isometry3d::from_translation(render_pos), 0.05, Color::srgb(0.0, 1.0, 1.0));
+                gizmos.sphere(
+                    Isometry3d::from_translation(render_pos),
+                    0.05,
+                    Color::srgb(0.0, 1.0, 1.0),
+                );
             }
         }
     }
@@ -226,13 +244,11 @@ fn draw_trajectory(
 
 fn trajectory_to_render(pos: [f64; 3], frame: ReferenceFrame) -> Vec3 {
     match frame {
-        ReferenceFrame::Heliocentric => {
-            Vec3::new(
-                (pos[0] / AU * RENDER_SCALE) as f32,
-                (pos[2] / AU * RENDER_SCALE) as f32,
-                (pos[1] / AU * RENDER_SCALE) as f32,
-            )
-        }
+        ReferenceFrame::Heliocentric => Vec3::new(
+            (pos[0] / AU * RENDER_SCALE) as f32,
+            (pos[2] / AU * RENDER_SCALE) as f32,
+            (pos[1] / AU * RENDER_SCALE) as f32,
+        ),
         ReferenceFrame::EarthCentered => {
             // Scale Earth-centered trajectory relative to Earth's position
             // For now, render at a small scale near the origin
@@ -250,15 +266,14 @@ fn trajectory_to_render(pos: [f64; 3], frame: ReferenceFrame) -> Vec3 {
 // Playback
 // ---------------------------------------------------------------------------
 
-fn update_playback(
-    time: Res<Time>,
-    mut state: ResMut<LaunchState>,
-) {
+fn update_playback(time: Res<Time>, mut state: ResMut<LaunchState>) {
     if !state.playback_active || !state.playback_playing {
         return;
     }
 
-    let Some(traj) = &state.trajectory else { return };
+    let Some(traj) = &state.trajectory else {
+        return;
+    };
     let total_time = traj.points.last().map(|p| p.time).unwrap_or(1.0);
 
     state.playback_time += time.delta_secs_f64() * state.playback_speed;
@@ -269,7 +284,9 @@ fn update_playback(
 }
 
 fn interpolate_trajectory(traj: &Trajectory, time: f64) -> Option<([f64; 3], [f64; 3])> {
-    if traj.points.is_empty() { return None; }
+    if traj.points.is_empty() {
+        return None;
+    }
     if traj.points.len() == 1 {
         let p = &traj.points[0];
         return Some((p.position, p.velocity));

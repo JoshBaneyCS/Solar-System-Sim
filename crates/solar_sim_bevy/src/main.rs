@@ -1,3 +1,10 @@
+#![allow(
+    dead_code,
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::collapsible_if
+)]
+
 use bevy::prelude::*;
 use bevy_embedded_assets::EmbeddedAssetPlugin;
 

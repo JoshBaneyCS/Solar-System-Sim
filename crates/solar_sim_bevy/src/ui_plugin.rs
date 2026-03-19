@@ -19,17 +19,16 @@ impl Plugin for UIPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(EguiPlugin)
             .insert_resource(ui_about::AboutWindowOpen::default())
-            .add_systems(Update, (
-                ui_controls::simulation_controls_panel,
-                ui_bodies::bodies_panel
-                    .after(ui_controls::simulation_controls_panel),
-                ui_physics::physics_panel
-                    .after(ui_bodies::bodies_panel),
-                ui_statusbar::status_bar_panel
-                    .after(ui_physics::physics_panel),
-                ui_about::about_dialog
-                    .after(ui_statusbar::status_bar_panel),
-            ))
+            .add_systems(
+                Update,
+                (
+                    ui_controls::simulation_controls_panel,
+                    ui_bodies::bodies_panel.after(ui_controls::simulation_controls_panel),
+                    ui_physics::physics_panel.after(ui_bodies::bodies_panel),
+                    ui_statusbar::status_bar_panel.after(ui_physics::physics_panel),
+                    ui_about::about_dialog.after(ui_statusbar::status_bar_panel),
+                ),
+            )
             .add_systems(Update, simulation_keyboard_shortcuts);
     }
 }

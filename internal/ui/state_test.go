@@ -2,6 +2,7 @@ package ui
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,15 +33,15 @@ func TestAppState_ListenerFired(t *testing.T) {
 	sim := physics.NewSimulator()
 	state := NewAppState(sim, nil)
 
-	fired := false
+	var fired atomic.Bool
 	state.AddListener(func() {
-		fired = true
+		fired.Store(true)
 	})
 
 	state.SetShowSpacetime(true)
 	// Listener is debounced (50ms timer) — wait for it to fire
 	time.Sleep(100 * time.Millisecond)
-	if !fired {
+	if !fired.Load() {
 		t.Error("listener should have been called")
 	}
 }

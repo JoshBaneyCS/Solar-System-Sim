@@ -29,7 +29,10 @@ impl Plugin for CelestialRenderPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_lighting)
             .add_systems(Update, attach_meshes_to_bodies)
-            .add_systems(PostUpdate, (maintain_display_scale, apply_body_spin).chain());
+            .add_systems(
+                PostUpdate,
+                (maintain_display_scale, apply_body_spin).chain(),
+            );
     }
 }
 
@@ -252,27 +255,27 @@ fn body_spin_for(name: &str) -> BodySpin {
     // (rotation_period_days, axial_tilt_degrees)
     // Negative period = retrograde rotation
     let (period_days, tilt_deg) = match name {
-        "Sun"       => (25.05, 7.25),
-        "Mercury"   => (58.646, 0.034),
-        "Venus"     => (-243.025, 177.36),
-        "Earth"     => (0.9973, 23.44),
-        "Mars"      => (1.026, 25.19),
-        "Jupiter"   => (0.4135, 3.13),
-        "Saturn"    => (0.4440, 26.73),
-        "Uranus"    => (-0.7183, 97.77),
-        "Neptune"   => (0.6713, 28.32),
-        "Pluto"     => (-6.387, 122.53),
+        "Sun" => (25.05, 7.25),
+        "Mercury" => (58.646, 0.034),
+        "Venus" => (-243.025, 177.36),
+        "Earth" => (0.9973, 23.44),
+        "Mars" => (1.026, 25.19),
+        "Jupiter" => (0.4135, 3.13),
+        "Saturn" => (0.4440, 26.73),
+        "Uranus" => (-0.7183, 97.77),
+        "Neptune" => (0.6713, 28.32),
+        "Pluto" => (-6.387, 122.53),
         // Moons (approximate)
-        "Moon"      => (27.322, 6.68),
-        "Io"        => (1.769, 0.0),
-        "Europa"    => (3.551, 0.1),
-        "Ganymede"  => (7.155, 0.2),
-        "Callisto"  => (16.689, 0.2),
-        "Titan"     => (15.945, 0.3),
-        "Phobos"    => (0.319, 0.0),
-        "Deimos"    => (1.263, 0.0),
+        "Moon" => (27.322, 6.68),
+        "Io" => (1.769, 0.0),
+        "Europa" => (3.551, 0.1),
+        "Ganymede" => (7.155, 0.2),
+        "Callisto" => (16.689, 0.2),
+        "Titan" => (15.945, 0.3),
+        "Phobos" => (0.319, 0.0),
+        "Deimos" => (1.263, 0.0),
         // Default: slow rotation
-        _           => (10.0, 0.0),
+        _ => (10.0, 0.0),
     };
 
     BodySpin {

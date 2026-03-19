@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 
 use crate::physics_plugin::{
-    BlackHoleMarker, BlackHoleRegistry, CelestialBody, SimulationConfig, SimulationState, Sun,
-    AU, RENDER_SCALE,
+    BlackHoleMarker, BlackHoleRegistry, CelestialBody, SimulationConfig, SimulationState, Sun, AU,
+    RENDER_SCALE,
 };
 use crate::render_plugin::DisplayScale;
 
@@ -39,7 +39,12 @@ fn draw_spacetime_grid(
     sim_state: Option<Res<SimulationState>>,
     bh_registry: Res<BlackHoleRegistry>,
     body_query: Query<
-        (&CelestialBody, &Transform, Option<&DisplayScale>, Option<&BlackHoleMarker>),
+        (
+            &CelestialBody,
+            &Transform,
+            Option<&DisplayScale>,
+            Option<&BlackHoleMarker>,
+        ),
         Without<Sun>,
     >,
     mut gizmos: Gizmos,

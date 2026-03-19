@@ -95,10 +95,7 @@ pub struct EguiWantsInput {
     pub keyboard: bool,
 }
 
-fn update_egui_wants_input(
-    mut contexts: EguiContexts,
-    mut wants: ResMut<EguiWantsInput>,
-) {
+fn update_egui_wants_input(mut contexts: EguiContexts, mut wants: ResMut<EguiWantsInput>) {
     let ctx = contexts.ctx_mut();
     wants.pointer = ctx.wants_pointer_input();
     wants.keyboard = ctx.wants_keyboard_input();
@@ -144,9 +141,10 @@ fn camera_rotate(
         orbit.yaw -= ev.delta.x * orbit.rotate_sensitivity;
         orbit.pitch -= ev.delta.y * orbit.rotate_sensitivity;
         // Clamp pitch to avoid flipping
-        orbit.pitch = orbit
-            .pitch
-            .clamp(-std::f32::consts::FRAC_PI_2 + 0.01, std::f32::consts::FRAC_PI_2 - 0.01);
+        orbit.pitch = orbit.pitch.clamp(
+            -std::f32::consts::FRAC_PI_2 + 0.01,
+            std::f32::consts::FRAC_PI_2 - 0.01,
+        );
     }
 }
 

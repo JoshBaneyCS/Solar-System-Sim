@@ -430,7 +430,16 @@ impl Plugin for PhysicsPlugin {
             .insert_resource(Time::<Fixed>::from_hz(60.0))
             .add_event::<ResetSimulationEvent>()
             .add_systems(Startup, spawn_solar_system)
-            .add_systems(FixedUpdate, (sync_sun_mass, step_simulation, sync_ecs_from_simulation, push_moons_outside_parents).chain())
+            .add_systems(
+                FixedUpdate,
+                (
+                    sync_sun_mass,
+                    step_simulation,
+                    sync_ecs_from_simulation,
+                    push_moons_outside_parents,
+                )
+                    .chain(),
+            )
             .add_systems(Update, (manage_dynamic_bodies, handle_reset_simulation));
     }
 }
@@ -518,7 +527,7 @@ fn sync_sun_mass(
         // Scale planet velocities once so they orbit at the new mass
         // v_circ = sqrt(G*M/r), so v_new = v_old * sqrt(M_new/M_old)
         if !hole.velocities_adjusted {
-            let scale = (hole.mass_solar as f64).sqrt();
+            let scale = hole.mass_solar.sqrt();
             for i in 0..sim.inner.n_bodies {
                 sim.inner.velocities[i] = sim.inner.velocities[i].mul(scale);
             }
@@ -665,10 +674,16 @@ fn manage_dynamic_bodies(
     if config.show_moons && !state.moons_spawned {
         for moon_def in MOON_DATA.iter() {
             // Find parent body position/velocity in the simulation
-            let parent_state = planet_query.iter().find(|(b, _)| b.name == moon_def.parent_name);
+            let parent_state = planet_query
+                .iter()
+                .find(|(b, _)| b.name == moon_def.parent_name);
             let (parent_pos, parent_vel, parent_sim_index) = if let Some((body, _)) = parent_state {
                 if body.sim_index < sim.inner.n_bodies {
-                    (sim.inner.positions[body.sim_index], sim.inner.velocities[body.sim_index], body.sim_index)
+                    (
+                        sim.inner.positions[body.sim_index],
+                        sim.inner.velocities[body.sim_index],
+                        body.sim_index,
+                    )
                 } else {
                     (PVec3::default(), PVec3::default(), 0)
                 }
@@ -901,9 +916,7 @@ fn handle_reset_simulation(
 }
 
 /// Create moon position/velocity relative to parent.
-fn create_moon_from_elements(
-    m: &crate::body_catalog::MoonDef,
-) -> (PVec3, PVec3) {
+fn create_moon_from_elements(m: &crate::body_catalog::MoonDef) -> (PVec3, PVec3) {
     let a = m.semi_major_axis_au * AU;
     let e = m.eccentricity;
     let i = m.inclination_deg.to_radians();

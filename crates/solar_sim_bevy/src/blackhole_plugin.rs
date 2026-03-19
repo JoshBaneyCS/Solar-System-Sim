@@ -2,8 +2,8 @@ use bevy::prelude::*;
 use physics_core::constants::G;
 
 use crate::physics_plugin::{
-    BlackHoleMarker, BlackHoleRegistry, BodyType, CelestialBody, SimulationState,
-    AU, C_LIGHT, RENDER_SCALE, SUN_MASS,
+    BlackHoleMarker, BlackHoleRegistry, BodyType, CelestialBody, SimulationState, AU, C_LIGHT,
+    RENDER_SCALE, SUN_MASS,
 };
 use crate::render_plugin::{DisplayScale, RenderInitialized};
 
@@ -44,7 +44,12 @@ fn schwarzschild_render_radius(mass_kg: f64) -> f32 {
 fn sync_black_hole_visuals(
     bh_registry: Res<BlackHoleRegistry>,
     mut commands: Commands,
-    mut query: Query<(Entity, &CelestialBody, Option<&mut DisplayScale>, Option<&BlackHoleMarker>)>,
+    mut query: Query<(
+        Entity,
+        &CelestialBody,
+        Option<&mut DisplayScale>,
+        Option<&BlackHoleMarker>,
+    )>,
 ) {
     for (entity, body, display_scale, bh_marker) in &mut query {
         let active_hole = bh_registry.active.iter().find(|h| h.body_name == body.name);
@@ -134,7 +139,13 @@ fn draw_accretion_disks(
 }
 
 /// Draw a circle in the XZ plane using line segments.
-fn draw_circle_gizmo(gizmos: &mut Gizmos, center: Vec3, radius: f32, segments: usize, color: Color) {
+fn draw_circle_gizmo(
+    gizmos: &mut Gizmos,
+    center: Vec3,
+    radius: f32,
+    segments: usize,
+    color: Color,
+) {
     for s in 0..segments {
         let a1 = (s as f32 / segments as f32) * std::f32::consts::TAU;
         let a2 = ((s + 1) as f32 / segments as f32) * std::f32::consts::TAU;
@@ -157,7 +168,11 @@ fn check_event_horizon_capture(
     let Some(mut sim) = sim_state else { return };
 
     for (bh_tf, bh_body) in &bh_query {
-        let Some(hole) = bh_registry.active.iter().find(|h| h.body_name == bh_body.name) else {
+        let Some(hole) = bh_registry
+            .active
+            .iter()
+            .find(|h| h.body_name == bh_body.name)
+        else {
             continue;
         };
 

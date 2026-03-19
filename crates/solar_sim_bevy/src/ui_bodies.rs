@@ -1,9 +1,7 @@
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 
-use crate::physics_plugin::{
-    BodyType, CelestialBody, SimulationState, AU,
-};
+use crate::physics_plugin::{BodyType, CelestialBody, SimulationState, AU};
 
 /// Resource to track which body to follow.
 #[derive(Resource, Default)]
@@ -58,14 +56,9 @@ pub fn bodies_panel(
                         ui.horizontal(|ui| {
                             ui.label(&body.name);
 
-                            let is_following = follow_target
-                                .entity
-                                .map_or(false, |e| e == *entity);
+                            let is_following = follow_target.entity == Some(*entity);
 
-                            if ui
-                                .selectable_label(is_following, "Follow")
-                                .clicked()
-                            {
+                            if ui.selectable_label(is_following, "Follow").clicked() {
                                 if is_following {
                                     follow_target.entity = None;
                                     follow_target.name.clear();
@@ -81,12 +74,10 @@ pub fn bodies_panel(
                             if body.sim_index < sim.inner.n_bodies {
                                 let pos = sim.inner.positions[body.sim_index];
                                 let vel = sim.inner.velocities[body.sim_index];
-                                let dist_au = (pos.x * pos.x + pos.y * pos.y + pos.z * pos.z)
-                                    .sqrt()
-                                    / AU;
+                                let dist_au =
+                                    (pos.x * pos.x + pos.y * pos.y + pos.z * pos.z).sqrt() / AU;
                                 let speed_kms =
-                                    (vel.x * vel.x + vel.y * vel.y + vel.z * vel.z).sqrt()
-                                        / 1000.0;
+                                    (vel.x * vel.x + vel.y * vel.y + vel.z * vel.z).sqrt() / 1000.0;
 
                                 ui.indent(body.name.as_str(), |ui| {
                                     ui.label(format!("Dist: {:.3} AU", dist_au));

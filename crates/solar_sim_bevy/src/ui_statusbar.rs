@@ -1,5 +1,5 @@
-use bevy::prelude::*;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
+use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 
 use crate::camera_plugin::OrbitCamera;

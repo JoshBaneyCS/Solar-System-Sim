@@ -38,7 +38,14 @@ pub fn simulation_controls_panel(
 
             // Play / Pause / Rewind / Fast-Forward
             ui.horizontal(|ui| {
-                if ui.button(if config.is_playing { "\u{23F8} Pause" } else { "\u{25B6} Play" }).clicked() {
+                if ui
+                    .button(if config.is_playing {
+                        "\u{23F8} Pause"
+                    } else {
+                        "\u{25B6} Play"
+                    })
+                    .clicked()
+                {
                     config.is_playing = !config.is_playing;
                 }
                 if ui.button("\u{23EA} Rewind").clicked() {
@@ -59,7 +66,10 @@ pub fn simulation_controls_panel(
                 ui.label("Speed:");
                 ui.label(format!("{:.2}x", config.time_speed));
             });
-            if ui.add(egui::Slider::new(&mut exp_val, -10.0..=10.0).text("2^x")).changed() {
+            if ui
+                .add(egui::Slider::new(&mut exp_val, -10.0..=10.0).text("2^x"))
+                .changed()
+            {
                 *exp = exp_val;
                 let sign = if config.time_speed < 0.0 { -1.0 } else { 1.0 };
                 config.time_speed = sign * 2.0_f64.powf(exp_val);
@@ -80,7 +90,10 @@ pub fn simulation_controls_panel(
             ui.horizontal(|ui| {
                 ui.label(format!("Inclination Scale: {:.0}x", incl));
             });
-            if ui.add(egui::Slider::new(&mut incl, 1.0..=50.0).text("x")).changed() {
+            if ui
+                .add(egui::Slider::new(&mut incl, 1.0..=50.0).text("x"))
+                .changed()
+            {
                 config.inclination_scale = incl;
             }
 
@@ -110,8 +123,16 @@ pub fn simulation_controls_panel(
                         IntegratorType::RK4 => "RK4 (classic)",
                     })
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut config.integrator, IntegratorType::Verlet, "Verlet (symplectic)");
-                        ui.selectable_value(&mut config.integrator, IntegratorType::RK4, "RK4 (classic)");
+                        ui.selectable_value(
+                            &mut config.integrator,
+                            IntegratorType::Verlet,
+                            "Verlet (symplectic)",
+                        );
+                        ui.selectable_value(
+                            &mut config.integrator,
+                            IntegratorType::RK4,
+                            "RK4 (classic)",
+                        );
                     });
             });
 
@@ -124,7 +145,10 @@ pub fn simulation_controls_panel(
                 ui.horizontal(|ui| {
                     ui.label(format!("Sun Mass: {:.1}x", sun_mass));
                 });
-                if ui.add(egui::Slider::new(&mut sun_mass, 0.1..=5.0)).changed() {
+                if ui
+                    .add(egui::Slider::new(&mut sun_mass, 0.1..=5.0))
+                    .changed()
+                {
                     config.sun_mass_multiplier = sun_mass as f64;
                 }
             }
@@ -164,13 +188,22 @@ pub fn simulation_controls_panel(
             ui.horizontal(|ui| {
                 ui.label(format!("Mass: {:.0} M\u{2609}", bh_registry.ui_mass_solar));
             });
-            if ui.add(egui::Slider::new(&mut mass_log, 1.0..=8.0).text("10^x")).changed() {
+            if ui
+                .add(egui::Slider::new(&mut mass_log, 1.0..=8.0).text("10^x"))
+                .changed()
+            {
                 bh_registry.ui_mass_solar = 10.0_f64.powf(mass_log);
             }
 
             // Create button
             if !bh_registry.ui_selected_body.is_empty() {
-                if ui.button(format!("Create Black Hole at {}", bh_registry.ui_selected_body)).clicked() {
+                if ui
+                    .button(format!(
+                        "Create Black Hole at {}",
+                        bh_registry.ui_selected_body
+                    ))
+                    .clicked()
+                {
                     let body_name = bh_registry.ui_selected_body.clone();
                     let mass_solar = bh_registry.ui_mass_solar;
 
@@ -218,7 +251,10 @@ pub fn simulation_controls_panel(
                 let mut to_remove: Vec<usize> = Vec::new();
                 for (i, hole) in bh_registry.active.iter().enumerate() {
                     ui.horizontal(|ui| {
-                        ui.label(format!("{}: {:.0} M\u{2609}", hole.body_name, hole.mass_solar));
+                        ui.label(format!(
+                            "{}: {:.0} M\u{2609}",
+                            hole.body_name, hole.mass_solar
+                        ));
                         if ui.small_button("Remove").clicked() {
                             to_remove.push(i);
                         }
@@ -271,7 +307,10 @@ pub fn simulation_controls_panel(
             egui::ComboBox::from_id_salt("follow_select")
                 .selected_text(current_follow)
                 .show_ui(ui, |ui| {
-                    if ui.selectable_label(follow_target.entity.is_none(), "None (Free Camera)").clicked() {
+                    if ui
+                        .selectable_label(follow_target.entity.is_none(), "None (Free Camera)")
+                        .clicked()
+                    {
                         follow_target.entity = None;
                         follow_target.name.clear();
                     }
@@ -294,7 +333,14 @@ pub fn simulation_controls_panel(
 
             // Zoom slider
             let mut zoom = orbit.distance;
-            if ui.add(egui::Slider::new(&mut zoom, 0.5..=5000.0).logarithmic(true).text("Zoom")).changed() {
+            if ui
+                .add(
+                    egui::Slider::new(&mut zoom, 0.5..=5000.0)
+                        .logarithmic(true)
+                        .text("Zoom"),
+                )
+                .changed()
+            {
                 orbit.distance = zoom;
             }
 

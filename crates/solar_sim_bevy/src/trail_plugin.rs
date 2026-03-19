@@ -60,8 +60,11 @@ pub struct TrailPlugin;
 
 impl Plugin for TrailPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(TrailSampleTimer(Timer::from_seconds(0.1, TimerMode::Repeating)))
-            .add_systems(PostUpdate, (sample_trail_positions, draw_trails).chain());
+        app.insert_resource(TrailSampleTimer(Timer::from_seconds(
+            0.1,
+            TimerMode::Repeating,
+        )))
+        .add_systems(PostUpdate, (sample_trail_positions, draw_trails).chain());
     }
 }
 

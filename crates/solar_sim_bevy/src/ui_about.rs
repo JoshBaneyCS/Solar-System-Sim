@@ -4,10 +4,7 @@ use bevy_egui::{egui, EguiContexts};
 #[derive(Resource, Default)]
 pub struct AboutWindowOpen(pub bool);
 
-pub fn about_dialog(
-    mut contexts: EguiContexts,
-    mut open: ResMut<AboutWindowOpen>,
-) {
+pub fn about_dialog(mut contexts: EguiContexts, mut open: ResMut<AboutWindowOpen>) {
     if !open.0 {
         return;
     }

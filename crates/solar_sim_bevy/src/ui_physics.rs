@@ -3,9 +3,7 @@ use bevy_egui::{egui, EguiContexts};
 use physics_core::constants::G;
 
 use crate::camera_plugin::OrbitCamera;
-use crate::physics_plugin::{
-    CelestialBody, SimulationConfig, SimulationState, SimulationTime, AU,
-};
+use crate::physics_plugin::{CelestialBody, SimulationConfig, SimulationState, SimulationTime, AU};
 
 pub fn physics_panel(
     mut contexts: EguiContexts,
@@ -40,9 +38,9 @@ pub fn physics_panel(
                 // --- N-body ---
                 let n_bodies = sim_state.as_ref().map_or(0, |s| s.inner.n_bodies);
                 ui.strong("N-Body Equation");
-                ui.label(format!(
+                ui.label(
                     "a\u{1d62} = \u{2211}(j\u{2260}i) G\u{00b7}m\u{2c7c}/|r\u{2c7c}-r\u{1d62}|\u{00b3} \u{00b7} (r\u{2c7c}-r\u{1d62})"
-                ));
+                );
                 ui.label(format!("Bodies: {} (+ Sun)", n_bodies));
 
                 if config.general_relativity {

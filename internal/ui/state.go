@@ -66,17 +66,20 @@ func (s *AppState) AddListener(fn func()) {
 // notifyListeners debounces listener notifications to avoid flooding
 // Fyne's event loop during rapid slider drags.
 func (s *AppState) notifyListeners() {
+	s.mu.Lock()
 	if s.notifyTimer != nil {
 		s.notifyTimer.Stop()
 	}
 	s.notifyTimer = time.AfterFunc(50*time.Millisecond, func() {
 		s.mu.RLock()
-		listeners := s.listeners
+		listeners := make([]func(), len(s.listeners))
+		copy(listeners, s.listeners)
 		s.mu.RUnlock()
 		for _, fn := range listeners {
 			fn()
 		}
 	})
+	s.mu.Unlock()
 }
 
 // --- Getters ---

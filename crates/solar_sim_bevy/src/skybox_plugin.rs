@@ -1,5 +1,5 @@
-use bevy::prelude::*;
 use bevy::core_pipeline::bloom::Bloom;
+use bevy::prelude::*;
 
 use crate::camera_plugin::OrbitCameraMarker;
 
@@ -56,10 +56,7 @@ fn setup_skybox_sphere(
 // Bloom: add bloom settings to the camera for sun glow
 // ---------------------------------------------------------------------------
 
-fn setup_bloom(
-    mut commands: Commands,
-    query: Query<Entity, With<OrbitCameraMarker>>,
-) {
+fn setup_bloom(mut commands: Commands, query: Query<Entity, With<OrbitCameraMarker>>) {
     for entity in &query {
         commands.entity(entity).insert((
             Bloom {
