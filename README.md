@@ -370,3 +370,7 @@ Help fund ongoing development:
 [issues-url]: https://github.com/JoshBaneyCS/Solar-System-Sim/issues
 [license-shield]: https://img.shields.io/github/license/JoshBaneyCS/Solar-System-Sim.svg?style=for-the-badge
 [license-url]: https://github.com/JoshBaneyCS/Solar-System-Sim/blob/master/LICENSE
+
+
+
+Made by Josh Baney - For the love of science! 
